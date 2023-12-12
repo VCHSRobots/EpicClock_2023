@@ -71,12 +71,12 @@ def dump_eeprom(a0, n):
     for i in range(nrows):
         a = i * 64 + a0
         ss = "%08d: " % a
-        for j in range(4):
-            x = read_eeprom(a + j * 8, 8)
+        for j in range(2):
+            x = read_eeprom(a + j * 32, 32)
             sx = ""
-            for ii in range(8):
+            for ii in range(32):
                 if x[ii] >= 32 and x[ii] < 127: sx += chr(x[ii])
-                elif x[ii] >= 0 and x[ii] <= 9: sx += chr(x[ii] + 48)
+                elif x[ii] != 0: sx += '-'
                 else: sx += '.'
             ss += sx
         print(ss)

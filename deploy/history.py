@@ -25,22 +25,40 @@ REC_SIZE      =  8
 RECS_PER_PAGE = int(PAGE_SIZE / REC_SIZE)   # This must be an interger
 NPAGES        = 16
 NRECS         = NPAGES * RECS_PER_PAGE  # Total number of records before rollover
+PAGE_CLK_ID   =  1                      # Page for Clock ID
 PAGE_PWR_CYC  =  2                      # First Page for Power cycle records
 PAGE_TIME_CHK = 20                      # First Page for Time Check records
 
-def wipe_eeprom():
+def wipe_eeprom(clock_id = b'default'):
     ''' Completely clears the eeprom, and then writes our signature.'''
     buf = bytearray(32)
     for i in range(128):
         rt.write_eeprom(i*32, buf)
     rt.write_eeprom(0, b'epicclock')
-
+    write_clock_id(clock_id)
+    
 def init_eeprom():
     ''' Checks to see if the eeprom has been initized. If not
     write a signature and prepares empty records.'''
     buf = rt.read_eeprom(0, 9)
     if buf == b'epicclock': return
     wipe_eeprom()
+
+def write_clock_id(clock_id):
+    ''' Writes the clock id into eeprom. (Can be str or bytes).'''
+    if type(clock_id) is str: clock_id = bytes(clock_id, 'ascii') 
+    clock_id += 16 * b'\00'
+    clock_id = clock_id[0:16]
+    rt.write_eeprom(PAGE_CLK_ID*PAGE_SIZE, clock_id)
+    
+def read_clock_id():
+    ''' Returns the clock id as a string.'''
+    bb = rt.read_eeprom(PAGE_CLK_ID*PAGE_SIZE, 16)
+    s = ""
+    for b in bb:
+        if b == 0: return s
+        s += chr(b)
+    return s
 
 def get_last(page0):
     ''' Returns the last best record as a 4-tuple or None.
@@ -86,6 +104,13 @@ def get_last_time_check():
     ''' Returns the UTC time of the last time sync from eeprom. Or None
     if nothing found.'''
     ipage, indx, count, tt = get_last(PAGE_TIME_CHK)
+    if count <= 0: return None
+    return tt
+
+def get_last_power_cycle():
+    ''' Returns the UTC time of the last time the clock was powered up, or
+    None if nothing found.'''
+    ipage, indx, count, tt = get_last(PAGE_PWR_CYC)
     if count <= 0: return None
     return tt
 

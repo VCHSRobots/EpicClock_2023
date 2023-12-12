@@ -71,6 +71,9 @@ import timehelp as th
 import timesync as sync
 import time
 
+Version = "V0.9, 12/10/23"
+ClockId = "dev_unit"
+
 critical_times = [
     ((20, 50), (21, 05), (0, 1, 2, 3), neo.c_red, neo.c_white, 10),  
     ((02, 55), (03, 01), (0, 1, 2, 3, 4, 5, 6), neo.c_red, neo.c_white, 8)]
@@ -108,24 +111,31 @@ def critical_time_check(t):
                 return (c1, c2, bp)
     return (neo.c_red, neo.c_red, 0)
 
-def wait_for_network_time():
+def wait_for_network_time(must_connect = False):
     '''Used at startup. Disables clock since no time to display.  Trys to
     connect to wifi.'''
     global time_valid
     icount = 0
-    neo.blue_square(0)
     while True:
+        neo.blue_square(0)
         print("Scanning for wifi...")
         ntp.init()
+        tstart = time.time()
         while True:
             access_point = ntp.scan()
             if access_point is not None: break
             icount += 1
-            neo.blue_square(icount, (0, 0, 40))
+            neo.blue_square(icount, (40, 0, 40))
             time.sleep(0.5)
+            if time.time() - tstart > 30:
+                neo.show_no_wifi()
+                time.sleep(5.0)
+                tstart = time.time()
+                neo.blue_square(0)
         ssid, bssid, chan, signal, _, _, pw = access_point
         print("Found wifi access point. Name=%s, Chan=%d, signal=%d, pw=%s" % (ssid, chan, signal, pw))
         neo.blue_square(icount, neo.c_blue)
+        print("Connecting to wifi...")
         ntp.start_connect(ssid, pw)
         tstart = time.time()
         while True:
@@ -135,15 +145,19 @@ def wait_for_network_time():
             time.sleep(0.5)
             if time.time() - tstart > 30.0: break
         if not ntp.is_connected():
-            print("Unable to connect.  Restart.")
+            print("Unable to connect...")
             ntp.network_off()
-            neo.solid(neo.c_black)
-            neo.show()
-            time.sleep(4.0)
+            neo.show_no_wifi()
+            time.sleep(6.0)
+            if not must_connect: return
+            neo.blue_square(0)
             continue
+        neo.show_wifi_ok()
+        time.sleep(4.0)
+        neo.blue_square(icount, neo.c_green)
         ntp.print_network_info()
         neo.blue_square(icount, neo.c_green)
-        print("Using NTP to get time.")
+        print("Using NTP to get time...")
         tstart = time.time()
         t = None
         while True:
@@ -154,14 +168,17 @@ def wait_for_network_time():
             time.sleep(0.5)
             if time.time() - tstart > 10.0: break    
         if t is None:
-            print("Unable to get NTP time.  Restart.")
+            print("Unable to get NTP time.")
             ntp.network_off()
-            neo.solid(neo.c_black)
-            neo.show()
-            time.sleep(4.0)
+            neo.show_no_ntp()
+            time.sleep(6.0)
+            if not must_connect: return
             continue
+        neo.show_ntp_ok()
+        time.sleep(4.0)
         str_tme = str(time.localtime(t))
-        print("Setting Clock to UTC Time: %s" % str_tme)
+        print("NTP Time Recevied.")
+        print("Setting RTC Module to UTC Time: %s" % str_tme)
         rtc.set_time(time.localtime(t))
         hist.time_check(t)
         ntp.network_off()
@@ -170,19 +187,23 @@ def wait_for_network_time():
             
 def startup():
     global time_valid, requested_render
+    print("Clock Startup. Id=%s   Version=%s" % (ClockId, Version))
+    print("Running startup anaimation...")
     neo.startup_animation()
+    print("Initializing eeprom...")
     hist.init_eeprom()
     tuse = rtc.get_time()
     year, month, date, hours, mins, seconds, dow, doy = tuse
+    print("Time found from rtc at startup = ", tuse)
     tuse = time.mktime(tuse)
     if year < 2010:
         time_valid = False  # We don't have a valid time.
         tuse = time.mktime((2000, 1, 1, 0, 0, 0, 0, 0))
+        print("RTC time is invaid.")
     else:
         time_valid = True
     hist.power_cycle_increment(tuse)
-    if not time_valid:
-        wait_for_network_time()
+    wait_for_network_time(must_connect = not time_valid)
 
 def run():
     global time_valid, requested_render

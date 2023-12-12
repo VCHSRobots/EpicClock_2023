@@ -18,6 +18,16 @@ wifi_table = [
 
 google_ntp = ('216.239.35.0', 123)
 
+break_scan = False
+break_wifi = False
+break_ntp  = False
+
+def debug_off():
+    global break_scan, break_wifi, break_ntp
+    break_scan = False
+    break_wifi = False
+    break_ntp  = False
+
 def init():
     ''' Initialize the network object. '''
     global wlan
@@ -31,6 +41,7 @@ def network_off():
 def scan():
     ''' Scan the wifi environment, and return the strongest network that we recognize.
     Returned data is a 7-tuple: (ssid, bssid, chan, signal, ?, ?, pw)'''
+    if break_scan: return None
     aps = wlan.scan()
     found = []
     for ap in aps:
@@ -54,6 +65,7 @@ def is_connected():
 
 def start_connect(ssid, pw):
     ''' Starts the network trying to connect to the given access point. '''
+    if break_wifi: return 
     wlan.active(True)
     wlan.connect(ssid, pw)
     
@@ -75,6 +87,7 @@ def connect(ssid, pw):
     print(wlan.ifconfig())
 
 def ntp(addr=google_ntp):
+    if break_ntp: return None
     REF_TIME_1970 = 2208988800  # Reference time
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     client.settimeout(2.0)
@@ -109,6 +122,9 @@ def setrtc():
     y = (x[0], x[1], x[2], x[6], x[3], x[4], x[5], x[7])
     rtc = machine.RTC()
     rtc.datetime(y)
+    
+  
+
     
 
 
