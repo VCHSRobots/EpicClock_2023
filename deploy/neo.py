@@ -12,7 +12,7 @@ import math
 # c_white = (255, 255, 255)
 
 # Brightness Reduction
-b = 0.75
+b = 0.5
 c_red   = (int(b*255), 0, 0)
 c_green = (0, int(b*255), 0)
 c_blue  = (0, 0, int(b*255))

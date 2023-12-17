@@ -100,8 +100,9 @@ def ntp(addr=google_ntp):
         return None        
     client.close()
     if data:
-        t = struct.unpack('!12I', data)[10]
-        t -= REF_TIME_1970
+        unpacked = struct.unpack('!12I', data)
+        t = unpacked[10] - REF_TIME_1970
+        #frac_of_second = float(unpacked[11]) / 2**32
         return t
     return None
 
