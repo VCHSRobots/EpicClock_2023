@@ -15,8 +15,8 @@ from machine import Pin, I2C, SoftI2C
 import timehelp as th
 import time
 
-#i2c = SoftI2C(Pin(5), Pin(4), freq=100_000)         # Software I2C
-i2c = I2C(0, scl=Pin(5), sda=Pin(4), freq= 100_000)  # Hardware I2C
+i2c = SoftI2C(Pin(5), Pin(4), freq=100_000)         # Software I2C
+#i2c = I2C(0, scl=Pin(5), sda=Pin(4), freq= 100_000)  # Hardware I2C
 rtc_adr    = 0x68
 eeprom_adr = 0x57
 

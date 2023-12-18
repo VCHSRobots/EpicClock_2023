@@ -38,6 +38,10 @@ def dump_eeprom(adr0=0, n=2048):
     ''' Dumps eeprom to the terminal starting at adr, for n bytes.'''
     rtc.dump_eeprom(adr0, n)
     
+def set0():
+    ''' Syncs the time to NTP time.'''
+    main.wait_for_network_time(must_connect = True)
+    
 def last_boot():
     ''' Returns the UTC time of last boot.'''
     tt = hist.get_last_power_cycle()

@@ -220,6 +220,7 @@ def run():
         if not valid_time:
             requested_render = (-1, -1, neo.c_red, neo.c_red, neo.c_white, 0)
             time.sleep(1.0)
+            sync.sync_time(tutc, True)
             continue
         # If it has been a long time since a time sync, turn the colon to blue.
         tlast_update = hist.get_last_time_check()
@@ -251,7 +252,7 @@ def run():
         h = th.h24_to_h12(h)
         requested_render = (h, m, dc1, dc2, colon_color, blink_period)
         time.sleep(0.5)
-        sync.sync_time(tutc)
+        
         
 def set_rtc_with_test(test_name):
     ''' Sets the clock to some special times for testing. '''
