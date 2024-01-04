@@ -70,33 +70,61 @@ import rtcmod as rtc
 import timehelp as th
 import timesync as sync
 import time
+import next_color
+import encoder
 
 Version = "V0.9, 12/10/23"
 ClockId = "dev_unit"
 
-critical_times = [
-    ((20, 50), (21, 05), (0, 1, 2, 3), neo.c_red, neo.c_white, 10),  
-    ((02, 55), (03, 01), (0, 1, 2, 3, 4, 5, 6), neo.c_red, neo.c_white, 8)]
 
-requested_render = (-1, -1, neo.c_red, neo.c_white, neo.c_blue, 0)
-last_render = (-100, -100, neo.c_black, neo.c_black)
+class ClockStates:
+    BRIGHTNESS = 1
+    DIGIT_COLOR = 2
+    COLON_COLOR = 3
+    SECONDS_COLOR = 4
+    AM_COLOR = 5
+    RAINBOW = 6
+
+
+critical_times = [ ]
+# Epic Robots at the School:
+#    ((20, 50), (21, 05), (0, 1, 2, 3), neo.c_red, neo.c_white, 10),  
+#    ((02, 55), (03, 01), (0, 1, 2, 3, 4, 5, 6), neo.c_red, neo.c_white, 8)]
+
+requested_render = (-1, -1, -1, True, neo.c_white, neo.c_blue, 0)
+last_render = (-100, -100,-100, True, neo.c_black, neo.c_black, 0)
 blink_counter = 0
 blink_even = False
 time_valid = False
+digit_color = neo.c_teal
+digit_color_state = next_color.ColorStates.TO_BLUE
+colon_color = neo.c_teal
+colon_color_state = next_color.ColorStates.TO_BLUE
+seconds_color = neo.c_purple
+seconds_color_state = next_color.ColorStates.BACK_TO_RED
+am_color = neo.c_teal
+am_color_state = next_color.ColorStates.TO_BLUE
 
+COLOR_SPEED = 15
+clock_state = ClockStates.BRIGHTNESS
+    
+    
+    
 def update_display(timer):
-    global requested_render, last_render, blink_even, blink_counter
-    h, m, dc, dac, cc, blink_period = requested_render
+    global requested_render, last_render, blink_even, blink_counter, digit_color, brightness
+    h, m, s, isAM, dac, cc, blink_period = requested_render
     if blink_period > 0:
         blink_counter += 1
         if blink_counter > blink_period: blink_counter = 0
         if blink_counter >= blink_period / 2: dc = dac
-    new_render = (h, m, dc, cc)
+    new_render = (h, m, s, isAM, digit_color, cc, brightness)
     if new_render != last_render:
         neo.solid(neo.c_black)
-        neo.render_time(h, m, dc, cc)
+        neo.render_time(h, m, s, isAM, digit_color, cc, seconds_color, am_color, brightness)
+        draw_menu_light()
         neo.show()
         last_render = new_render
+    
         
 def critical_time_check(t):
     " Returns params for critical times, if active."
@@ -109,7 +137,7 @@ def critical_time_check(t):
         if wd in wds:
             if tchk >= tc1 and tchk <= tc2:
                 return (c1, c2, bp)
-    return (neo.c_red, neo.c_red, 0)
+    return (neo.c_teal, neo.c_teal, 0)
 
 def wait_for_network_time(must_connect = False):
     '''Used at startup. Disables clock since no time to display.  Trys to
@@ -124,6 +152,7 @@ def wait_for_network_time(must_connect = False):
         while True:
             access_point = ntp.scan()
             if access_point is not None: break
+            print("No access point found")
             icount += 1
             neo.blue_square(icount, (40, 0, 40))
             time.sleep(0.5)
@@ -132,6 +161,7 @@ def wait_for_network_time(must_connect = False):
                 time.sleep(5.0)
                 tstart = time.time()
                 neo.blue_square(0)
+                if not must_connect: return
         ssid, bssid, chan, signal, _, _, pw = access_point
         print("Found wifi access point. Name=%s, Chan=%d, signal=%d, pw=%s" % (ssid, chan, signal, pw))
         neo.blue_square(icount, neo.c_blue)
@@ -153,7 +183,7 @@ def wait_for_network_time(must_connect = False):
             neo.blue_square(0)
             continue
         neo.show_wifi_ok()
-        time.sleep(4.0)
+        time.sleep(2.0)
         neo.blue_square(icount, neo.c_green)
         ntp.print_network_info()
         neo.blue_square(icount, neo.c_green)
@@ -175,7 +205,7 @@ def wait_for_network_time(must_connect = False):
             if not must_connect: return
             continue
         neo.show_ntp_ok()
-        time.sleep(4.0)
+        time.sleep(2.0)
         str_tme = str(time.localtime(t))
         print("NTP Time Recevied.")
         print("Setting RTC Module to UTC Time: %s" % str_tme)
@@ -186,10 +216,11 @@ def wait_for_network_time(must_connect = False):
         return
             
 def startup():
-    global time_valid, requested_render
+    global time_valid
     print("Clock Startup. Id=%s   Version=%s" % (ClockId, Version))
-    print("Running startup anaimation...")
-    neo.startup_animation()
+    print("Running rainbow_animation anaimation...")
+    #def rainbow_animation(loops=50, dim_amount = .93, initial_brightness=0.1, speed=56):
+    neo.rainbow_animation(15, .8, brightness)
     print("Initializing eeprom...")
     hist.init_eeprom()
     tuse = rtc.get_time()
@@ -198,61 +229,300 @@ def startup():
     tuse = time.mktime(tuse)
     if year < 2010:
         time_valid = False  # We don't have a valid time.
-        tuse = time.mktime((2000, 1, 1, 0, 0, 0, 0, 0))
+        tuse = time.mktime((2000, 1, 1, True, 0, 0, 0, 0, 0))
         print("RTC time is invaid.")
     else:
         time_valid = True
     hist.power_cycle_increment(tuse)
     wait_for_network_time(must_connect = not time_valid)
 
+def is_valid_time(years):
+    return years >= 2010
+
+def update_colon_color(tutc, tlast_update):
+    global colon_color
+    if tutc - tlast_update > 30 * 24 * 3600:
+        return (0,0,255)
+    return colon_color
+
+def apply_timezone_offset(t, last_dst):
+    return th.apply_offset(t, th.pdt_offset) if last_dst else th.apply_offset(t, th.pst_offset)
+
+def handle_dst_change(new_dst, last_dst, t):
+    if new_dst != last_dst:
+        print(f"Daylight Savings is changing to {'ON' if new_dst else 'OFF'}.")
+        return new_dst, apply_timezone_offset(t, th.pdt_offset) if new_dst else apply_timezone_offset(t, th.pst_offset), True
+    return last_dst, None, False
+
+def start_timer(timer):
+    timer.init(period=50, mode=Timer.PERIODIC, callback=update_display)
+    
+def stop_timer(timer):
+    timer.deinit()
+    
+def read_history():
+    '''reads the history from eeprom and saves it to our global variables'''
+    global brightness, digit_color, digit_color_state, colon_color, colon_color_state, seconds_color, seconds_state, am_color, am_color_state
+
+    brightness = hist.read_brightness()
+
+    if brightness <= 0:
+        brightness = 0.04
+    elif brightness > 1:
+        brightness = 1
+
+    digit_color, digit_color_state, colon_color, colon_color_state, seconds_color, seconds_color_state, am_color, am_color_state = hist.read_colors()
+
+    print(f"Saved color is: {digit_color}, saved state is: {digit_color_state}, saved colon color is: {colon_color}, saved colon state is: {colon_color_state}, saved brightness is: {brightness}")
+
 def run():
-    global time_valid, requested_render
+    global time_valid, requested_render, brightness, clock_state
+
+    read_history()
     startup()
-    t1 = Timer(period=50, mode=Timer.PERIODIC, callback=update_display)
-    last_dst = True  
+    clock_state = ClockStates.BRIGHTNESS
+    state_loops = 0
+    display_timer = Timer(period=50, mode=Timer.PERIODIC, callback=update_display)
+    last_dst = True
     dst_lockout = False
+
+    # Main Loop!!
     while True:
-        t = rtc.get_time()   # This SHOULD be UTC time.
+        t = rtc.get_time()
         tutc = time.mktime(t)
         years = t[0]
-        if years < 2010: valid_time = False
-        else:            valid_time = True
-        if not valid_time:
-            requested_render = (-1, -1, neo.c_red, neo.c_red, neo.c_white, 0)
+
+        if not is_valid_time(years):
+            requested_render = (-1, -1, -1, True, neo.c_red, neo.c_white, 0)
             time.sleep(1.0)
             sync.sync_time(tutc, True)
             continue
-        # If it has been a long time since a time sync, turn the colon to blue.
-        tlast_update = hist.get_last_time_check()
-        if tlast_update is None:
-            colon_color = neo.c_blue
-        else:
-            tspan = tutc - tlast_update
-            if tspan > 30 * 24 * 3600:
-                # Longer than 30 days!
-                colon_color = neo.c_blue
-            else: colon_color = neo.c_red
-        # Use last PST/PDT setting to determin if daylight savings is in effect
-        if last_dst: tlocal = th.apply_offset(t, th.pdt_offset)
-        else:        tlocal = th.apply_offset(t, th.pst_offset)
+
+        colon_color_override = update_colon_color(tutc, hist.get_last_time_check())
+
+        tlocal = apply_timezone_offset(t, last_dst)
+
         if not dst_lockout:
             new_dst = th.daylight_savings_check(tlocal)
-            if new_dst != last_dst:
-                if new_dst: print("Daylight Savings is changing to ON.")
-                else:       print("Daylight Savings is changing to OFF.")
-                last_dst = new_dst
-                if last_dst: tlocal = th.apply_offset(t, th.pdt_offset)
-                else:        tlocal = th.apply_offset(t, th.pst_offset)
-                dst_lockout = True
-        else:
-            h = tlocal[3]
-            if h > 8: dst_lockout = False      
+            last_dst, tlocal, dst_lockout = handle_dst_change(new_dst, last_dst, t)
+
+        h, m, s = tlocal[3], tlocal[4], tlocal[5]
+        is_am = h < 12
+        h12 = th.h24_to_h12(h)
+
         dc1, dc2, blink_period = critical_time_check(tlocal)
-        h, m = tlocal[3], tlocal[4]
-        h = th.h24_to_h12(h)
-        requested_render = (h, m, dc1, dc2, colon_color, blink_period)
-        time.sleep(0.5)
+
+        requested_render = (h12, m, s, is_am, dc2, colon_color_override, blink_period)
+        time.sleep(0.01)
+
+        if clock_state == ClockStates.BRIGHTNESS:
+            check_encoder_for_brightness(h12, m, s, is_am, display_timer)
+        if clock_state == ClockStates.DIGIT_COLOR:
+            check_encoder_for_color_changes(h12, m, s, is_am, display_timer)
+        if clock_state == ClockStates.COLON_COLOR:
+            check_encoder_for_color_changes(h12, m, s, is_am, display_timer)
+        if clock_state == ClockStates.SECONDS_COLOR:
+            check_encoder_for_color_changes(h12, m, s, is_am, display_timer)
+        if clock_state == ClockStates.AM_COLOR:
+            check_encoder_for_color_changes(h12, m, s, is_am, display_timer)
+
+        if encoder.did_button_press():
+            clock_state += 1
+            draw_menu_light()
+            if clock_state == ClockStates.RAINBOW:
+                # def rainbow_animation(loops=50, dim_amount=.93, initial_brightness=0.1, speed=56):
+                neo.rainbow_animation(600, 0.93, brightness)
+                clock_state = ClockStates.BRIGHTNESS
+            print("State: ", clock_state)
+            state_loops = 300;
+
+        # This returns you to the first state if you don't press a button after 300 loops
+        if state_loops > 0:
+            state_loops -= 1
+            if state_loops <= 0:
+                clock_state = ClockStates.BRIGHTNESS
+                print("State: ", clock_state)
+
+                
+# Helper method for checking encoder and then updating brightness
+def check_encoder_for_brightness(h12, m, s, is_am, timer):
+    '''Reads the encoder for brightness changes and updates the brightness.
+
+    Continuously monitors the encoder while it is changing, adjusting the brightness
+    according to the encoder direction.
+    '''
+    global brightness, digit_color, colon_color
+    encoderValue = encoder.read_encoder()
+
+    if encoderValue != encoder.EncoderResult.NO_CHANGE:
+        encoder_loops = 80
+        stop_timer(timer) #stops timer so it won't interrupt
+
+        while True:  # looping to keep focus on encoder and not miss steps
+            if encoderValue != encoder.EncoderResult.NO_CHANGE:
+                change_brightness(encoderValue)
+                neo.render_time(h12, m, s, is_am, digit_color, colon_color, seconds_color, am_color, brightness)
+                neo.show()
+                encoder_loops = 80  # loops 80 times at .01 sleep. So stays in this loop about .8s after the last encoder change
+
+            time.sleep(0.01)
+            encoderValue = encoder.read_encoder()
+            encoder_loops -= 1
+
+            if encoder_loops < 0:
+                print("encoder loop break")
+                hist.write_brightness(brightness)
+                start_timer(timer) #re-starts timer
+                break
+
+def check_encoder_for_color_changes(h12, m, s, is_am, timer):
+    '''Reads the encoder for color changes and updates the color based on the clock state.
+
+    Continuously monitors the encoder while it is changing, adjusting the color
+    according to the current clock state. This function ensures the color updates
+    smoothly, taking into account the direction and speed of the encoder rotation.
+    '''
+    encoderValue = encoder.read_encoder()
+
+    color, color_state = get_current_color()
+
+    if encoderValue != encoder.EncoderResult.NO_CHANGE:
+        encoder_loops = 1
+        stop_timer(timer) #stops timer so it won't interrupt
+
+        while True:  # looping to keep focus on encoder and not miss steps
+            if encoderValue != encoder.EncoderResult.NO_CHANGE:
+                color, color_state = change_color(color, color_state, encoderValue, encoder_loops)
+                set_current_color(color, color_state)
+                draw_color_box(h12, m, s, is_am)
+                encoder_loops = 80  # loops 80 times at .01 sleep. So stays in this loop about .8s after the last encoder change
+
+            time.sleep(0.01)
+            encoderValue = encoder.read_encoder()
+            encoder_loops -= 1
+
+            if encoder_loops < 0:
+                print("encoder color loop break")
+                start_timer(timer) #re-starts timer
+                save_colors()
+                break
+            
+def draw_color_box(h12, m, s, is_am):
+    '''draws a box around the thing you are changing the color of'''
+    if clock_state == ClockStates.DIGIT_COLOR: 
+        neo.draw_vert_line(0, 0, 7, neo.dim_color(digit_color, brightness))
+        neo.draw_vert_line(24, 0, 7, neo.dim_color(digit_color, brightness))
+        neo.draw_horz_line(7, 0, 24, neo.dim_color(digit_color, brightness))
+        neo.draw_horz_line(0, 0, 24, neo.dim_color(digit_color, brightness))
+    elif clock_state == ClockStates.COLON_COLOR:
+        neo.draw_vert_line(10, 1, 5, neo.dim_color(colon_color, brightness))
+        neo.draw_vert_line(12, 1, 5, neo.dim_color(colon_color, brightness))
+        neo.draw_horz_line(1, 10, 12, neo.dim_color(colon_color, brightness))
+        neo.draw_horz_line(5, 10, 12, neo.dim_color(colon_color, brightness))
+    elif clock_state == ClockStates.SECONDS_COLOR:
+        neo.draw_vert_line(24, 7, 5, neo.dim_color(seconds_color, brightness))
+        neo.draw_horz_line(5, 24, 31, neo.dim_color(seconds_color, brightness))
+    elif clock_state == ClockStates.AM_COLOR:
+        neo.draw_vert_line(24, 0, 3, neo.dim_color(am_color, brightness))
+        neo.draw_vert_line(31, 0, 3, neo.dim_color(am_color, brightness))
+        neo.draw_horz_line(3, 24, 31, neo.dim_color(am_color, brightness))
+        neo.draw_horz_line(0, 24, 31, neo.dim_color(am_color, brightness))
+    
+    neo.render_time(h12, m, s, is_am, digit_color, colon_color, seconds_color, am_color, brightness)
+    neo.show()
+
+def draw_menu_light():
+    '''draws a singe light showing what menu spot you're on so you know what the dial will do'''
+    if clock_state == ClockStates.DIGIT_COLOR:
+        neo.set_color(0, 7, neo.dim_color(digit_color, brightness))
+    elif clock_state == ClockStates.COLON_COLOR:
+        neo.set_color(1, 7, neo.dim_color(colon_color, brightness))
+    elif clock_state == ClockStates.SECONDS_COLOR:
+        neo.set_color(2, 7, neo.dim_color(seconds_color, brightness))
+    elif clock_state == ClockStates.AM_COLOR:
+        neo.set_color(3, 7, neo.dim_color(am_color, brightness))
+    
+def get_current_color():
+    '''returns the color we are modifying based on what state we are in'''
+    if clock_state == ClockStates.DIGIT_COLOR:
+        return (digit_color, digit_color_state)
+    elif clock_state == ClockStates.COLON_COLOR:
+        return (colon_color, colon_color_state)
+    elif clock_state == ClockStates.SECONDS_COLOR:
+        return (seconds_color, seconds_color_state)
+    elif clock_state == ClockStates.AM_COLOR:
+        return (am_color, am_color_state)
+    
+def set_current_color(color, color_state):
+    '''sets the new color and color state depending on what clock state we are in'''
+    global digit_color, colon_color, digit_color_state, colon_color_state, seconds_color, seconds_color_state, am_color, am_color_state
+    if clock_state == ClockStates.DIGIT_COLOR:
+        digit_color = color
+        digit_color_state = color_state
+    elif clock_state == ClockStates.COLON_COLOR:
+        colon_color = color
+        colon_color_state = color_state
+    elif clock_state == ClockStates.SECONDS_COLOR:
+        seconds_color = color
+        seconds_color_state = color_state
+    elif clock_state == ClockStates.AM_COLOR:
+        am_color = color
+        am_color_state = color_state
         
+def save_colors():
+    hist.write_colors(digit_color, digit_color_state, colon_color, colon_color_state, seconds_color, seconds_color_state, am_color, am_color_state)
+
+def change_color(color, color_state, direction, encoder_loops):
+    r, g, b = color
+    last_state = color_state
+
+    speed = int(COLOR_SPEED * encoder_loops / 80)
+
+    if direction == encoder.EncoderResult.UP:
+        r, g, b, color_state = next_color.next_color(r, g, b, color_state, speed, next_color.ColorDirection.UP)
+    elif direction == encoder.EncoderResult.DOWN:
+        r, g, b, color_state = next_color.next_color(r, g, b, color_state, speed, next_color.ColorDirection.DOWN)
+
+    color = (r, g, b)
+
+    # Uncomment the lines below if you want to print the color, speed, and state information... caution noisy 
+    # print(f"color = {color} -- speed: {speed}")
+    
+    # Uncomment these lines if you only want the color state changes... less noisy
+    # if color_state != last_state:
+    # 		print(f"color state change {last_state} -> {color_state}")
+
+    return (color, color_state)
+
+def change_brightness(direction):
+    '''Adjusts the brightness based on the specified direction.
+
+    The brightness change amount is dynamically determined depending on the current brightness level.
+    Incrementing and decrementing amounts vary for different brightness ranges.
+    '''
+    global brightness
+
+    change_amount = 0.2
+
+    if brightness >= 0.3:
+        change_amount = 0.2
+    elif brightness < 0.05:
+        change_amount = 0.002
+    elif brightness < 0.1:
+        change_amount = 0.01
+    elif brightness < 0.3:
+        change_amount = 0.03
+
+    if direction == encoder.EncoderResult.UP:
+        brightness += change_amount
+    else:
+        brightness -= change_amount
+
+    brightness = max(0.004, min(1, brightness))
+    
+    # Uncomment to see the current brightness levels as they are changed
+    # print("Brightness: ", brightness)
+
         
 def set_rtc_with_test(test_name):
     ''' Sets the clock to some special times for testing. '''
