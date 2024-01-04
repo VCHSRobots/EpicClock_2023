@@ -4,6 +4,8 @@ import alphabet
 import time
 import ntptime as ntp
 import math
+import next_color
+import encoder
 
 # c_red = (255, 0, 0)
 # c_green = (0, 255, 0)
@@ -12,12 +14,14 @@ import math
 # c_white = (255, 255, 255)
 
 # Brightness Reduction
-b = 0.5
+b = .03
 c_red   = (int(b*255), 0, 0)
 c_green = (0, int(b*255), 0)
 c_blue  = (0, 0, int(b*255))
 c_black = (0, 0, 0)
 c_white = (int(b*255), int(b*255), int(b*255))
+c_purple = (int(255),0,int(255))
+c_teal = (int(b*0), int(200), int(255))
 
 pin_np = Pin(16, Pin.OUT)
 np = NeoPixel(pin_np, 256)
@@ -31,6 +35,10 @@ def solid(c):
     
 def clear():
     solid((0,0,0))
+    
+def dim_color(color, dimRatio):
+    r, g, b = color
+    return (int(r*dimRatio), int(g*dimRatio), int(b*dimRatio))
 
 def get_xy_index(x, y):
     ''' Returns the index in the neo pixel strip, given an (x,y) location, where (0,0) is the
@@ -49,9 +57,10 @@ def get_xy_index(x, y):
 
 def set_color(x, y, color):
     ''' Set color of one pixel at the given x,y location on the grid, where 0,0 is the bottom left.'''
+    #print(f"color r {color[0]}, g {color[1]}, b {color[2]}")
     i = get_xy_index(x, y)
     if i >= 0: np[i] = color
-
+        
 def my_abs(x):
     if x >= 0: return x
     return -x
@@ -126,7 +135,7 @@ def counter():
         show()
         time.sleep(0.25)
          
-def render_time(hours, mins, color_digits, color_colon):
+def render_time(hours, mins, sec, isAM, color_digits, color_colon, seconds_color, am_color, brightness):
     ''' Writes the time digits to the display. Doesn't clear or show.'''
     err = False
     if hours < 0 or hours > 12: err = True
@@ -137,11 +146,33 @@ def render_time(hours, mins, color_digits, color_colon):
     else:
         str_hours = "%02d" % hours
         str_mins  = "%02d" % mins
-    alphabet.render(np, 2, color_digits, str_hours[0])
-    alphabet.render(np, 9, color_digits, str_hours[1])
-    alphabet.render(np, 14, color_colon, ":")
-    alphabet.render(np, 19, color_digits, str_mins[0])
-    alphabet.render(np, 26, color_digits, str_mins[1])
+    if hours >= 10: alphabet.render(np, 0, dim_color(color_digits, brightness), str_hours[0])
+    alphabet.render(np, 5, dim_color(color_digits, brightness), str_hours[1])
+    alphabet.render(np, 9, dim_color(color_colon, brightness), ":")
+    alphabet.render(np, 13, dim_color(color_digits, brightness), str_mins[0])
+    alphabet.render(np, 19, dim_color(color_digits, brightness), str_mins[1])
+    
+    partialMin = sec/60*7
+    full = int(partialMin)
+    remainderFraction = partialMin-full
+    #Draw Seconds line
+    if(full>0):
+        draw_horz_line(7,25,25+full-1, dim_color(seconds_color, brightness))
+        draw_horz_line(6,25,25+full-1, dim_color(seconds_color, brightness))
+    #Draw partial second 
+    set_color(25+full,7,dim_color(dim_color(seconds_color, brightness), remainderFraction))
+    set_color(25+full,6,dim_color(dim_color(seconds_color, brightness), remainderFraction))
+    
+    
+    #Draw small 'a'
+    draw_horz_line(1, 25, 26, dim_color(am_color, brightness))
+    draw_horz_line(2, 25, 26, dim_color(am_color, brightness))
+    #Draw small 'm'
+    draw_horz_line(1, 28, 30, dim_color(am_color, brightness))
+    draw_horz_line(2, 28, 30, dim_color(am_color, brightness))
+    #Change the 'a' to a 'p' if it's 'pm'
+    if isAM == False:
+        set_color(25, 0, dim_color(am_color, brightness)) 
     
 def show_wifi_ok(color_wifi=c_blue, color_ok=c_green):
     ''' Writes "wifi ok" to the display. Doesn't clear or show.'''
@@ -194,7 +225,7 @@ def fill_pattern(pat, color):
     
 def startup_animation():
     ''' Runs a quick startup animation. Blocks till done.'''
-    solid((50,50,50))
+    solid((5,5,5))
     show()
     time.sleep(0.3)
     ccs = (c_red, c_blue, c_green)
@@ -211,6 +242,59 @@ def startup_animation():
             show()
             time.sleep(0.2)
             
+def rainbow_animation(loops=50, dim_amount = .93, initial_brightness=0.1, speed=56):
+    '''Runs a rainbow animation with shifting and dimming effects. Blocks until complete.'''
+    
+    # Initialize animation
+    clear()
+    show()
+    
+    # Initialize color and state
+    r, g, b = 255, 0, 20
+    state = next_color.ColorStates.BACK_TO_RED
+    
+    print("Rainbow animation start")
+    
+    # Draw diagonal lines until reaching the end
+    x = 0
+    while True:
+        draw_line(x, 7, x - 8, -1, dim_color((r, g, b), initial_brightness))
+        r, g, b, state = next_color.next_color(r, g, b, state, speed)
+        x += 1
+        if x > 38:
+            break
+    
+    show()
+    
+    # Shift horizontally animation
+    i = 0
+    print("Rainbow animation diagonal complete... starting shift")
+    
+    while True:
+        shift_horizontally()
+        show()
+        i += 1
+        if i > loops or encoder.did_button_press():
+            break
+    
+    # Dim animation
+    print("Dim animation")
+    current_brightness = dim_amount
+    
+    while current_brightness > 0.002:
+        shift_horizontally()
+        show()
+        if fade_out(current_brightness) <= 0:
+            break
+        current_brightness *= dim_amount
+    
+    print("Rainbow animation complete")
+    clear()
+    show()
+
+        
+    
+            
 def blue_square(indx, colon_color = c_blue):
     ''' Shows a blue square to indicate trying to connect to wifi and get time. '''
     solid(c_black)
@@ -222,5 +306,44 @@ def blue_square(indx, colon_color = c_blue):
         np[ii*16 + 20] = colon_color
     show()
     
+def shift_pixels_down():
+    '''Shifts pixels down the row of NeoPixels.'''
+    # Create a temporary list to store the shifted colors
+    shifted_pixels = [0] * N
+
+    # Shift the colors down the row
+    for i in range(N):
+        if i < N - 1:
+            shifted_pixels[i] = np[i + 1]
+        else:
+            shifted_pixels[i] = np[0]
     
+    # Update NeoPixels with the shifted colors
+    for i in range(N):
+        np[i] = shifted_pixels[i]
+
+def shift_horizontally(shift_amount=16):
+    '''Shifts pixels horizontally, moving them over one spot to the right. 16 is default because that would move the pixel up 8 rows and then down the 8 in the next column putting the pixel right next to where it started'''
+    # Create a temporary list to store the shifted colors
+    shifted_pixels = [0] * N
+
+    # Shift the colors by the specified amount to the left
+    for i in range(N):
+        shifted_pixels[i] = np[i - shift_amount]
     
+    # Update NeoPixels with the shifted colors
+    for i in range(N):
+        np[i] = shifted_pixels[i]
+
+def fade_out(brightness):
+    '''Fades out NeoPixels with the specified brightness.'''
+    max_color_value = 0
+    
+    # Dim each pixel's color and update NeoPixels
+    for i in range(N):
+        dimmed_color = tuple(int(c * brightness) for c in np[i])
+        np[i] = dimmed_color
+        
+        max_color_value = max(max_color_value, max(dimmed_color))
+        
+    return max_color_value
