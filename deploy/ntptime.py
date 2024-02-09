@@ -4,17 +4,11 @@ import network
 import machine
 import sys
 import time
-import pw
 
 wlan = None
 
-wifi_table = [
-    (b"BBHWifiLink", pw.Brandon),
-    (b"BrandonWiFi_Attic", pw.Brandon),
-    (b"BrandonWiFi_Attic_24", pw.Brandon),
-    (b"BrandonGarage", pw.Brandon),
-    (b"RobotsB17", pw.Epic),
-    (b"RobotsB18", pw.Epic) ]
+# no longer used
+wifi_table = [ ]
 
 google_ntp = ('216.239.35.0', 123)
 
@@ -38,6 +32,7 @@ def network_off():
     ''' Turn off network.  Must re-initalize after this.'''
     wlan.active(False)
 
+# no longer used now that have find_ap
 def scan():
     ''' Scan the wifi environment, and return the strongest network that we recognize.
     Returned data is a 7-tuple: (ssid, bssid, chan, signal, ?, ?, pw)'''
@@ -56,7 +51,20 @@ def scan():
     for f in found:
         ssid, bssid, chan, signal, _, _, pw = f
         if signal > best[3]: best = f
-    return best        
+    return best
+
+def find_ap(ssid_to_find):
+    ''' Scan the wifi environment, and return the the matched wifi access point.
+    Returned data is a 6-tuple: (ssid, bssid, chan, signal, ?, ?)'''
+    ssid_to_find = bytes(ssid_to_find, 'utf-8')
+    if break_scan: return None
+    aps = wlan.scan()
+    found = []
+    for ap in aps:
+        ssid, bssid, chan, signal, _, _ = ap
+        if ssid_to_find == ssid: return ap
+        #else: print("wrong wifi ", ssid)
+    return None   
             
 def is_connected():
     ''' Returns True if we have a wifi connection '''
@@ -73,7 +81,13 @@ def print_network_info():
     if not is_connected():
         print("Not connected to network.")
         return
-    print("Connected. Network Info: ", wlan.ifconfig()) 
+    print("Connected. Network Info: ", wlan.ifconfig())
+
+def get_ip():
+    if not is_connected():
+        print("not connected to network")
+        return "-1.-1.-1.-1"
+    return wlan.ifconfig()[0]
     
 def connect(ssid, pw):
     ''' Trys to connect to an access point with information given. Blocks till connected.'''
