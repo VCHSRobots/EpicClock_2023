@@ -28,7 +28,6 @@ RGB_MAX = 255
 
 def next_color(r, g, b, state, speed, color_direction=ColorDirection.UP):
     """given an r, g, b, color, the state and speed it returns the next color and state"""
-    
     speed *= color_direction
     if state == ColorStates.TO_RED:
         g = 0
