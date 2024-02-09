@@ -67,10 +67,11 @@ def read_eeprom(addr, nbytes):
     return x
     
 def dump_eeprom(a0, n):
+    dump = ""
     nrows = int((n / 64) + 1)
     for i in range(nrows):
         a = i * 64 + a0
-        ss = "%08d: " % a
+        ss = "%04d: " % a
         for j in range(2):
             x = read_eeprom(a + j * 32, 32)
             sx = ""
@@ -80,6 +81,9 @@ def dump_eeprom(a0, n):
                 else: sx += '.'
             ss += sx
         print(ss)
+        dump +=ss + "\n"
+    return dump
+        
         
 def get_time():
     ''' Returns time as a 8-tuple: year, month, day, hour, min, sec, wday, doy.
