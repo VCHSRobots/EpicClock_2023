@@ -1,11 +1,14 @@
 from machine import Pin
 from neopixel import NeoPixel
+#from main import RenderStyles
 import alphabet
 import time
 import ntptime as ntp
 import math
 import next_color
 import encoder
+import render_styles as RenderStyles
+
 
 # c_red = (255, 0, 0)
 # c_green = (0, 255, 0)
@@ -15,17 +18,20 @@ import encoder
 
 # Brightness Reduction
 b = .03
-c_red   = (int(b*255), 0, 0)
-c_green = (0, int(b*255), 0)
-c_blue  = (0, 0, int(b*255))
+c_red   = (255, 0, 0)
+c_green = (0, 255, 0)
+c_blue  = (0, 0, 255)
 c_black = (0, 0, 0)
-c_white = (int(b*255), int(b*255), int(b*255))
-c_purple = (int(255),0,int(255))
-c_teal = (int(b*0), int(200), int(255))
+c_white = (255, 255, 255)
+c_purple = (255,0,255)
+c_teal = (0, 200, 255)
 
 pin_np = Pin(16, Pin.OUT)
 np = NeoPixel(pin_np, 256)
 N = 256
+PANEL_WIDTH = 32
+PANEL_HEIGHT = 8
+CHAR_WIDTH = 6
 
 def show():
     np.write()
@@ -135,8 +141,17 @@ def counter():
         show()
         time.sleep(0.25)
          
-def render_time(hours, mins, sec, isAM, color_digits, color_colon, seconds_color, am_color, brightness):
+#     SHORT_SECOND_LINE = 0
+#     LONG_SECOND_LINE = 1
+#     NUMBERED_SECONDS = 2
+#     BORRING_MODE = 3
+         
+def render_time(hours, mins, sec, isAM, color_digits, color_colon, seconds_color, am_color, brightness, render_style = RenderStyles.NUMBERED_SECONDS):
     ''' Writes the time digits to the display. Doesn't clear or show.'''
+    if render_style == RenderStyles.BORING_MODE:
+        digit_column = [3,9,13,17,23]
+    else: digit_column = [0,5,9,13,19]
+    
     err = False
     if hours < 0 or hours > 12: err = True
     if mins < 0 or mins > 59: err = True
@@ -146,74 +161,117 @@ def render_time(hours, mins, sec, isAM, color_digits, color_colon, seconds_color
     else:
         str_hours = "%02d" % hours
         str_mins  = "%02d" % mins
-    if hours >= 10: alphabet.render(np, 0, dim_color(color_digits, brightness), str_hours[0])
-    alphabet.render(np, 5, dim_color(color_digits, brightness), str_hours[1])
-    alphabet.render(np, 9, dim_color(color_colon, brightness), ":")
-    alphabet.render(np, 13, dim_color(color_digits, brightness), str_mins[0])
-    alphabet.render(np, 19, dim_color(color_digits, brightness), str_mins[1])
+    if hours >= 10 or render_style == RenderStyles.BORING_MODE: alphabet.render(np, digit_column[0], dim_color(color_digits, brightness), str_hours[0])
     
-    partialMin = sec/60*7
-    full = int(partialMin)
-    remainderFraction = partialMin-full
-    #Draw Seconds line
-    if(full>0):
-        draw_horz_line(7,25,25+full-1, dim_color(seconds_color, brightness))
-        draw_horz_line(6,25,25+full-1, dim_color(seconds_color, brightness))
-    #Draw partial second 
-    set_color(25+full,7,dim_color(dim_color(seconds_color, brightness), remainderFraction))
-    set_color(25+full,6,dim_color(dim_color(seconds_color, brightness), remainderFraction))
+    alphabet.render(np, digit_column[1], dim_color(color_digits, brightness), str_hours[1])
+    alphabet.render(np, digit_column[2], dim_color(color_colon, brightness), ":")
+    alphabet.render(np, digit_column[3], dim_color(color_digits, brightness), str_mins[0])
+    alphabet.render(np, digit_column[4], dim_color(color_digits, brightness), str_mins[1])
+
+    if render_style == RenderStyles.SHORT_SECOND_LINE:  
+        partialMin = sec/60*7
+        full = int(partialMin)
+        remainderFraction = partialMin-full
+        #Draw Seconds line
+        if(full>0):
+            
+            draw_horz_line(7,25,25+full-1, dim_color(seconds_color, brightness))
+            draw_horz_line(6,25,25+full-1, dim_color(seconds_color, brightness))
+        #Draw partial second 
+        set_color(25+full,7,dim_color(dim_color(seconds_color, brightness), remainderFraction))
+        set_color(25+full,6,dim_color(dim_color(seconds_color, brightness), remainderFraction))
+        draw_am_pm(isAM, am_color, brightness)
+    elif render_style == RenderStyles.LONG_SECOND_LINE:
+        partialMin = sec/60*32
+        full = int(partialMin)
+        remainderFraction = partialMin-full
+        #Draw Seconds line
+        if(full>0):
+            draw_horz_line(7,0,full-1, dim_color(seconds_color, brightness))
+            set_color(full,7,dim_color(dim_color(seconds_color, brightness), remainderFraction))
+        draw_am_pm(isAM, am_color, brightness)
+    elif render_style == RenderStyles.NUMBERED_SECONDS:
+        alphabet.render_char(get_char_at_index(sec,1),25,dim_color(seconds_color, brightness), size='3x5')
+        alphabet.render_char(get_char_at_index(sec,0),29,dim_color(seconds_color, brightness), size='3x5')
+
+        
+
     
     
-    #Draw small 'a'
-    draw_horz_line(1, 25, 26, dim_color(am_color, brightness))
-    draw_horz_line(2, 25, 26, dim_color(am_color, brightness))
-    #Draw small 'm'
-    draw_horz_line(1, 28, 30, dim_color(am_color, brightness))
-    draw_horz_line(2, 28, 30, dim_color(am_color, brightness))
-    #Change the 'a' to a 'p' if it's 'pm'
-    if isAM == False:
+def get_char_at_index(number, index):
+    # Convert the number to a string
+    number_str = str(number)
+    
+    # Reverse the string
+    reversed_str = ''.join(reversed(number_str))
+    
+    # Check if the index is within the range of the reversed string
+    if index >= 0 and index < len(reversed_str):
+        # Get the character at the specified index
+        return reversed_str[index]
+    else:
+        # Index out of range
+        return '0'
+    
+def draw_am_pm(isAM, am_color, brightness):
+   #Change the 'a' to a 'p' if it's 'pm'
+    if isAM:
+        #Draw 'a'
+        draw_horz_line(0, 25, 27, dim_color(am_color, brightness))
+        draw_horz_line(1, 25, 27, dim_color(am_color, brightness))
+        draw_horz_line(2, 26, 27, dim_color(am_color, brightness))
+    else:
+        #Draw 'p'
+        draw_horz_line(1, 25, 27, dim_color(am_color, brightness))
+        draw_horz_line(2, 25, 27, dim_color(am_color, brightness))
         set_color(25, 0, dim_color(am_color, brightness)) 
-    
-def show_wifi_ok(color_wifi=c_blue, color_ok=c_green):
+    #Draw 'm'
+    draw_vert_line(29, 0, 2, dim_color(am_color, brightness))
+    draw_vert_line(30, 1, 2, dim_color(am_color, brightness))
+    draw_vert_line(31, 0, 2, dim_color(am_color, brightness))
+def show_wifi_ok(ip_address, color_wifi=c_blue, color_ok=c_green):
     ''' Writes "wifi ok" to the display. Doesn't clear or show.'''
     clear()
-    alphabet.render(np, 0, color_wifi, "w")
-    alphabet.render(np, 5, color_wifi, "i")
-    alphabet.render(np, 9, color_wifi, "f")
-    alphabet.render(np, 13, color_wifi, "i")
-    alphabet.render(np, 21, color_ok, "o")
-    alphabet.render(np, 27, color_ok, "k")
+    alphabet.render(np, 0, dim_color(color_wifi, b), "w")
+    alphabet.render(np, 5, dim_color(color_wifi, b), "i")
+    alphabet.render(np, 9, dim_color(color_wifi, b), "f")
+    alphabet.render(np, 13, dim_color(color_wifi, b), "i")
+    alphabet.render(np, 21, dim_color(color_ok, b), "o")
+    alphabet.render(np, 27, dim_color(color_ok, b), "k")
     show()
+    time.sleep(.5)
+    
+    scroll_text(ip_address,dim_color(color_wifi, b), .005)
     
 def show_no_wifi(color_no=c_red, color_wifi=c_blue):
     ''' Writes "NO wifi" to the display. Doesn't clear or show.'''
     clear()
-    alphabet.render(np,  0, color_no,   "N")
-    alphabet.render(np,  6, color_no,   "O")
-    alphabet.render(np, 16, color_wifi, "w")
-    alphabet.render(np, 21, color_wifi, "i")
-    alphabet.render(np, 25, color_wifi, "f")
-    alphabet.render(np, 29, color_wifi, "i")
+    alphabet.render(np,  0, dim_color(color_no, b),   "N")
+    alphabet.render(np,  6, dim_color(color_no, b),   "O")
+    alphabet.render(np, 16, dim_color(color_wifi, b), "w")
+    alphabet.render(np, 21, dim_color(color_wifi, b), "i")
+    alphabet.render(np, 25, dim_color(color_wifi, b), "f")
+    alphabet.render(np, 29, dim_color(color_wifi, b), "i")
     show()
     
 def show_ntp_ok():
     ''' Write "NTP OK" to the dispaly '''
     clear()
-    alphabet.new_render("N", 0, c_blue)
-    alphabet.new_render("T", 6, c_blue)
-    alphabet.new_render("P", 12, c_blue)
-    alphabet.new_render("O", 20, c_green)
-    alphabet.new_render("k", 26, c_green)
+    alphabet.new_render("N", 0, dim_color(c_blue,b))
+    alphabet.new_render("T", 6, dim_color(c_blue,b))
+    alphabet.new_render("P", 12, dim_color(c_blue,b))
+    alphabet.new_render("O", 20, dim_color(c_green,b))
+    alphabet.new_render("k", 26, dim_color(c_green,b))
     show()
     
 def show_no_ntp():
     ''' Writes "NO NTP" to the display.'''
     clear()
-    alphabet.new_render("N", 0, c_red)
-    alphabet.new_render("O", 6, c_red)
-    alphabet.new_render("N", 14, c_blue)
-    alphabet.new_render("T", 20, c_blue)
-    alphabet.new_render("P", 26, c_blue)
+    alphabet.new_render("N", 0, dim_color(c_red,b))
+    alphabet.new_render("O", 6, dim_color(c_red,b))
+    alphabet.new_render("N", 14, dim_color(c_blue,b))
+    alphabet.new_render("T", 20, dim_color(c_blue,b))
+    alphabet.new_render("P", 26, dim_color(c_blue,b))
     show()
     
 def fill_pattern(pat, color):
@@ -238,7 +296,7 @@ def startup_animation():
         for design in designs:
             solid(c_black)
             for seg in design:
-                fill_pattern(seg, color)
+                fill_pattern(seg, dim_color(color,b))
             show()
             time.sleep(0.2)
             
@@ -299,11 +357,11 @@ def blue_square(indx, colon_color = c_blue):
     ''' Shows a blue square to indicate trying to connect to wifi and get time. '''
     solid(c_black)
     square_1 = ((0, 16, 16), (15, 16, 16), (7, 16, 16), (8, 16, 16), (0, 8, 1), (248, 8, 1))
-    for seg in square_1: fill_pattern(seg, c_blue)
+    for seg in square_1: fill_pattern(seg, dim_color(c_blue,b))
     if indx > 0:
         ii = indx % 14
-        np[ii*16 + 19] = colon_color
-        np[ii*16 + 20] = colon_color
+        np[ii*16 + 19] = dim_color(colon_color, b)
+        np[ii*16 + 20] = dim_color(colon_color, b)
     show()
     
 def shift_pixels_down():
@@ -322,19 +380,33 @@ def shift_pixels_down():
     for i in range(N):
         np[i] = shifted_pixels[i]
 
-def shift_horizontally(shift_amount=16):
+def shift_horizontally(direction=1, shift_amount=16):
     '''Shifts pixels horizontally, moving them over one spot to the right. 16 is default because that would move the pixel up 8 rows and then down the 8 in the next column putting the pixel right next to where it started'''
     # Create a temporary list to store the shifted colors
-    shifted_pixels = [0] * N
+    shifted_pixels = [(0,0,0)] * N
 
     # Shift the colors by the specified amount to the left
     for i in range(N):
-        shifted_pixels[i] = np[i - shift_amount]
+        if(i-shift_amount*direction<N): shifted_pixels[i] = np[i - shift_amount* direction]
     
     # Update NeoPixels with the shifted colors
     for i in range(N):
         np[i] = shifted_pixels[i]
-
+        
+def shift_left():
+    '''Shifts pixels horizontally left, moving them over one spot to the left. '''
+    # Create a temporary list to store the shifted colors
+    shifted_pixels = [(0,0,0)] * N
+    i = 0
+    shift = 15
+    while(i < N):
+        if i + shift < N: shifted_pixels[i] = np[i + shift]
+        shift -= 2
+        if shift <1: shift = 15
+        i += 1
+    # Update NeoPixels with the shifted colors
+    for i in range(N):
+        np[i] = shifted_pixels[i]
 def fade_out(brightness):
     '''Fades out NeoPixels with the specified brightness.'''
     max_color_value = 0
@@ -347,3 +419,62 @@ def fade_out(brightness):
         max_color_value = max(max_color_value, max(dimmed_color))
         
     return max_color_value
+
+def set_global_brightness(brightness):
+    global b
+    b = brightness
+    
+# Function to scroll text left to right
+def scroll_text(text, color=(5, 5, 5), delay=0.4, isLarge = True):
+    if isLarge:
+        font = '5x7'
+        char_width = 6
+        row = 0
+    else:
+        font = '3x5'
+        char_width = 4
+        row = 1
+    for char in text:
+        w = 0
+        #print(f"Scrolling character: {char}")
+        while w < char_width:
+            shift_left()         
+            alphabet.render_char(char, PANEL_WIDTH - w, color, font, row)  # draws partial letter
+            show()
+            time.sleep(delay)
+            if(encoder.did_button_press()):
+                clear()
+                show()
+                return
+            w += 1
+            #print(f"Shift step {w}/{CHAR_WIDTH}")
+    i = 0
+    while i<PANEL_WIDTH:
+        shift_left()
+        show()
+        time.sleep(delay)
+        i+=1
+        
+scroll_text_string = ""
+scroll_color = (5,5,5)
+scroll_char_offset = 0
+scroll_char_index = 0
+
+def init_infinite_scroll(text, color=(5,5,5)):
+    global scroll_color, scroll_text_string
+    scroll_text_string = text + "  "
+    scroll_color = color
+    print(f"init infinite scroll with color: {color} and text: {text}")
+    
+def infinite_scroll_on_loop():
+    global scroll_char_index, scroll_char_offset
+    if(scroll_text_string == ""): return
+    if scroll_char_index >= len(scroll_text_string): scroll_char_index = 0
+    char = scroll_text_string[scroll_char_index]
+    shift_left()
+    alphabet.new_render(char, PANEL_WIDTH - scroll_char_offset, scroll_color)  # draws partial letter
+    show()
+    scroll_char_offset +=1
+    if(scroll_char_offset>=CHAR_WIDTH):
+        scroll_char_offset = 0
+        scroll_char_index += 1
