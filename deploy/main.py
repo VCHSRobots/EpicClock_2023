@@ -43,9 +43,11 @@
 # if the rules regarding daylight savings changes.
 #
 # Wifi Access
-# This code is hardwired to check for a list of wifi access points to gain connection to
-# the internet.  Currently this list includes the Brandon's house, and the school's Robotic
-# rooms.
+# If there is no wifi saved, the first time it boots it will create an access point
+# and display the access point's name and password as well as the ip address to visit
+# You can select your wifi from that webpage, enter it's password, and reboot. If the device
+# has a saved wifi ssid and password but can't connect to wifi it will create the access
+# point again while the clock is running so you can update the saved wifi credentials
 #
 # Critical Times
 # One feature of this clock is that it can change the color of the clock digits at different
@@ -57,7 +59,8 @@
 # History
 # A record is kept for each power up cycle, and each time the RTC is updated with NTP Time.
 # There are 64 records for each activity, on a rollover buffer in EEPROM.  This data can
-# be accessed manually by interacting with the code using Thorny.
+# be accessed manually by interacting with the code using Thorny. Brightness, colors, and
+#render styles are also saved and retreeved in the eeprom
 #
 
 import machine
@@ -68,14 +71,17 @@ import neo
 import ntptime as ntp
 import rtcmod as rtc
 import timehelp as th
-import timesync as sync
 import time
 import next_color
 import encoder
+import clock_server as server
+import access_point
+import log
+import gc
+import render_styles as RenderStyles
 
 Version = "V0.9, 12/10/23"
 ClockId = "dev_unit"
-
 
 class ClockStates:
     BRIGHTNESS = 1
@@ -83,16 +89,16 @@ class ClockStates:
     COLON_COLOR = 3
     SECONDS_COLOR = 4
     AM_COLOR = 5
-    RAINBOW = 6
-
-
+    WIFI = 6
+    RENDER_STYLE = 7
+    RAINBOW = 8
+    
+    
 critical_times = [ ]
 # Epic Robots at the School:
-#    ((20, 50), (21, 05), (0, 1, 2, 3), neo.c_red, neo.c_white, 10),  
-#    ((02, 55), (03, 01), (0, 1, 2, 3, 4, 5, 6), neo.c_red, neo.c_white, 8)]
+#    ((20, 50), (21, 05), (0, 1, 2, 3), neo.c_red, neo.c_white), 			#, 10),  removed blink period functionality now it blinks at a once per second period for all critical times 
+#    ((02, 55), (03, 01), (0, 1, 2, 3, 4, 5, 6), neo.c_red, neo.c_white)] 	#,8)]
 
-requested_render = (-1, -1, -1, True, neo.c_white, neo.c_blue, 0)
-last_render = (-100, -100,-100, True, neo.c_black, neo.c_black, 0)
 blink_counter = 0
 blink_even = False
 time_valid = False
@@ -107,52 +113,129 @@ am_color_state = next_color.ColorStates.TO_BLUE
 
 COLOR_SPEED = 15
 clock_state = ClockStates.BRIGHTNESS
-    
-    
-    
+brightness = 0.2
+is_connected = False
+
+is_blink = False
+crash_counter = 0
+last_crash = 0
+
 def update_display(timer):
-    global requested_render, last_render, blink_even, blink_counter, digit_color, brightness
-    h, m, s, isAM, dac, cc, blink_period = requested_render
-    if blink_period > 0:
-        blink_counter += 1
-        if blink_counter > blink_period: blink_counter = 0
-        if blink_counter >= blink_period / 2: dc = dac
-    new_render = (h, m, s, isAM, digit_color, cc, brightness)
-    if new_render != last_render:
+    global blink_even, blink_counter, digit_color, brightness, is_blink, crash_counter, last_crash
+    
+    try:
+        gc.collect()
+        tlocal = find_time()
+
+        digit_color_override, digit_blink_color = critical_time_check(tlocal)
+        if is_blink: digit_color_override = digit_blink_color
+        
+        #todo fix colon color override for stale time
+        #colon_color_override = update_colon_color(tlocal, hist.get_last_time_check())
+        colon_color_override = colon_color
+        
+        #print(f"timer fired. Digit color: {digit_color}")
+
         neo.solid(neo.c_black)
-        neo.render_time(h, m, s, isAM, digit_color, cc, seconds_color, am_color, brightness)
+        neo.render_time(h12, m, s, is_am, digit_color_override, colon_color_override, seconds_color, am_color, brightness, render_style)
         draw_menu_light()
         neo.show()
-        last_render = new_render
+        is_blink = not is_blink
+        last_s = s
+        gc.collect()
+        #if is_blink: raise Exception("Test exception in display timer!") #used to test the crash logging
+    except Exception as e:
+        crash_counter += 1
+        current_time = time.time()
+        if current_time - last_crash <= 10:  # If crashes occur within 10 seconds
+            if crash_counter >= 10:
+                log.log_exception(e, fatal=True)
+                stop_timer() #let it just stop working to prevent spamming the log forever
+            else:
+                log.log_exception(e, fatal=False) #less than ten crashes in 10 seconds so logging as non fatal and the dipslay timer will call again
+        else:
+            crash_counter = 1  # Reset counter if more than 10 seconds have passed since last crash
+        last_crash = current_time
     
+dst_lockout = False
+last_dst = True
+def find_time():
+    global h12, m, s, is_am, dst_lockout, last_dst
+    t = rtc.get_time()
+    tutc = time.mktime(t)
+    years = t[0]
+
+    if not is_valid_time(years):
+        h12 = -1
+        m = -1
+        s = -1
+        is_am = True
+        return tutc
+    
+    if last_dst: tlocal = th.apply_offset(t, th.pdt_offset)
+    else:        tlocal = th.apply_offset(t, th.pst_offset)
+    if not dst_lockout:
+        new_dst = th.daylight_savings_check(tlocal)
+        if new_dst != last_dst:
+            if new_dst: print("Daylight Savings is changing to ON.")
+            else:       print("Daylight Savings is changing to OFF.")
+            last_dst = new_dst
+            if last_dst: tlocal = th.apply_offset(t, th.pdt_offset)
+            else:        tlocal = th.apply_offset(t, th.pst_offset)
+            dst_lockout = True
+    else:
+        h = tlocal[3]
+        if h > 8: dst_lockout = False
+
+    h, m, s = tlocal[3], tlocal[4], tlocal[5]
+    is_am = h < 12
+    h12 = th.h24_to_h12(h)
+    return tlocal
+
+def is_valid_time(years):
+    return years >= 2010
+
+def update_colon_color(tutc, tlast_update):
+    
+    ### throwing error TODO:
+    #File main.py line 177, in update_colon_color
+    #TypeError: unsupported types for __sub__: ‘tuple’ ‘int’
+    #tutc: (2024, 1, 13, 22, 0, 49, 5, 13), tlast_update 1705211931
+    
+    print(f"tutc: {tutc}, tlast_update: {tlast_update}")
+    global colon_color
+    if tutc - tlast_update > 30 * 24 * 3600:
+        return (0,0,255)
+    return colon_color
         
 def critical_time_check(t):
     " Returns params for critical times, if active."
     wd = th.day_of_week(t)
     tchk = t[3] + (t[4] / 60.0)
     for ct in critical_times:
-        t1, t2, wds, c1, c2, bp = ct
+        t1, t2, wds, c1, c2 = ct
         tc1 = t1[0] + t1[1] / 60.0
         tc2 = t2[0] + t2[1] / 60.0
         if wd in wds:
             if tchk >= tc1 and tchk <= tc2:
-                return (c1, c2, bp)
-    return (neo.c_teal, neo.c_teal, 0)
+                return (c1, c2)
+    return (digit_color, digit_color)
 
 def wait_for_network_time(must_connect = False):
+    global ssid, pw, ip
     '''Used at startup. Disables clock since no time to display.  Trys to
     connect to wifi.'''
     global time_valid
     icount = 0
     while True:
         neo.blue_square(0)
-        print("Scanning for wifi...")
+        print("Scanning for wifi: " + ssid)
         ntp.init()
         tstart = time.time()
         while True:
-            access_point = ntp.scan()
+            access_point = ntp.find_ap(ssid)
             if access_point is not None: break
-            print("No access point found")
+            print("Access point not found")
             icount += 1
             neo.blue_square(icount, (40, 0, 40))
             time.sleep(0.5)
@@ -161,8 +244,8 @@ def wait_for_network_time(must_connect = False):
                 time.sleep(5.0)
                 tstart = time.time()
                 neo.blue_square(0)
-                if not must_connect: return
-        ssid, bssid, chan, signal, _, _, pw = access_point
+                if not must_connect: return ("","")
+        ssid, bssid, chan, signal, _, _= access_point
         print("Found wifi access point. Name=%s, Chan=%d, signal=%d, pw=%s" % (ssid, chan, signal, pw))
         neo.blue_square(icount, neo.c_blue)
         print("Connecting to wifi...")
@@ -179,10 +262,12 @@ def wait_for_network_time(must_connect = False):
             ntp.network_off()
             neo.show_no_wifi()
             time.sleep(6.0)
-            if not must_connect: return
+            if not must_connect: return ssid, pw
             neo.blue_square(0)
             continue
-        neo.show_wifi_ok()
+        ip = ntp.get_ip()
+        print("ip address from ntp: " + ip)
+        neo.show_wifi_ok(ip)
         time.sleep(2.0)
         neo.blue_square(icount, neo.c_green)
         ntp.print_network_info()
@@ -202,22 +287,25 @@ def wait_for_network_time(must_connect = False):
             ntp.network_off()
             neo.show_no_ntp()
             time.sleep(6.0)
-            if not must_connect: return
+            if not must_connect: return ssid, pw
             continue
-        neo.show_ntp_ok()
-        time.sleep(2.0)
+        rtc.set_time(time.localtime(t))
+        hist.time_check(t)
         str_tme = str(time.localtime(t))
         print("NTP Time Recevied.")
         print("Setting RTC Module to UTC Time: %s" % str_tme)
-        rtc.set_time(time.localtime(t))
-        hist.time_check(t)
+        neo.show_ntp_ok()
+        time.sleep(2.0)
         ntp.network_off()
         time_valid = True
-        return
+        return ssid, pw
             
 def startup():
     global time_valid
     print("Clock Startup. Id=%s   Version=%s" % (ClockId, Version))
+    read_history()
+    neo.set_global_brightness(brightness)
+    
     print("Running rainbow_animation anaimation...")
     #def rainbow_animation(loops=50, dim_amount = .93, initial_brightness=0.1, speed=56):
     neo.rainbow_animation(15, .8, brightness)
@@ -234,118 +322,114 @@ def startup():
     else:
         time_valid = True
     hist.power_cycle_increment(tuse)
-    wait_for_network_time(must_connect = not time_valid)
+    ssid, pw = wait_for_network_time(must_connect = not time_valid)
 
-def is_valid_time(years):
-    return years >= 2010
-
-def update_colon_color(tutc, tlast_update):
-    global colon_color
-    if tutc - tlast_update > 30 * 24 * 3600:
-        return (0,0,255)
-    return colon_color
-
-def apply_timezone_offset(t, last_dst):
-    return th.apply_offset(t, th.pdt_offset) if last_dst else th.apply_offset(t, th.pst_offset)
-
-def handle_dst_change(new_dst, last_dst, t):
-    if new_dst != last_dst:
-        print(f"Daylight Savings is changing to {'ON' if new_dst else 'OFF'}.")
-        return new_dst, apply_timezone_offset(t, th.pdt_offset) if new_dst else apply_timezone_offset(t, th.pst_offset), True
-    return last_dst, None, False
-
-def start_timer(timer):
-    timer.init(period=50, mode=Timer.PERIODIC, callback=update_display)
+def start_timer():
+    display_timer.init(period=500, mode=Timer.PERIODIC, callback=update_display)
     
-def stop_timer(timer):
-    timer.deinit()
+def stop_timer():
+    display_timer.deinit()
     
 def read_history():
     '''reads the history from eeprom and saves it to our global variables'''
-    global brightness, digit_color, digit_color_state, colon_color, colon_color_state, seconds_color, seconds_state, am_color, am_color_state
+    global brightness, digit_color, digit_color_state, colon_color, colon_color_state, seconds_color, seconds_state, am_color, am_color_state, render_style
 
-    brightness = hist.read_brightness()
+    try:
+        brightness = hist.read_brightness()
 
-    if brightness <= 0:
-        brightness = 0.04
-    elif brightness > 1:
-        brightness = 1
+        if brightness <= 0:
+            brightness = 0.04
+        elif brightness > 1:
+            brightness = 1
 
-    digit_color, digit_color_state, colon_color, colon_color_state, seconds_color, seconds_color_state, am_color, am_color_state = hist.read_colors()
+        digit_color, digit_color_state, colon_color, colon_color_state, seconds_color, seconds_color_state, am_color, am_color_state = hist.read_colors()
+        
+        render_style = hist.read_render_style()
+    except Exception as e:
+        print("could not read history! Excepion is: ",e)
+    print(f"Saved color is: {digit_color}, saved state is: {digit_color_state}, saved colon color is: {colon_color}, saved colon state is: {colon_color_state}, saved brightness is: {brightness}, render style: {render_style}")
 
-    print(f"Saved color is: {digit_color}, saved state is: {digit_color_state}, saved colon color is: {colon_color}, saved colon state is: {colon_color_state}, saved brightness is: {brightness}")
+def has_been_setup():
+    global ssid, pw
+    ssid, pw = hist.read_wifi()
+    print(f"SSID and PW from History: \"{ssid}\", \"{pw}\"")
+    if ssid == "" or pw == "": return False
+    else: return True
 
 def run():
-    global time_valid, requested_render, brightness, clock_state
-
-    read_history()
+    global time_valid, brightness, clock_state, digit_color, colon_color, seconds_color, am_color, display_timer, is_connected
+    if not has_been_setup():
+        access_point.run(access_point.scroll_text)
+        machine.soft_reset() #should never get here. access_point should loop forever
+        
     startup()
     clock_state = ClockStates.BRIGHTNESS
     state_loops = 0
-    display_timer = Timer(period=50, mode=Timer.PERIODIC, callback=update_display)
-    last_dst = True
-    dst_lockout = False
+    display_timer = Timer(period=500, mode=Timer.PERIODIC, callback=update_display)
+    
+    #connect to the server
+    is_connected = server.connect_wifi(ssid, pw)
+    
+    try:
+        if not is_connected: access_point.run(on_loop)
+        
+        count = 0
+        while not is_connected:
+            on_loop()
+            time.sleep(.01)
+            if count >= 10000:
+                count = 0
+                is_connected = server.connect_wifi(ssid, pw)
+        
+        #start the sever loop to continually listen for for connections. Pass in on_loop function to be ran each loop
+        server.start_server_loop(get_colors_for_server, update_colors_from_server, play_rainbow, draw_message_from_server, on_loop, toggle_render_style)
+    except Exception as e:
+        log.log_exception(e)
+        print ("server crashed!!!!")
+        print (f"Error: {e}")
+    finally:
+        #if we get here the main loop exited for some reason.
+        print("Resetting!!!!")
+        machine.soft_reset()
 
-    # Main Loop!!
-    while True:
-        t = rtc.get_time()
-        tutc = time.mktime(t)
-        years = t[0]
+state_loops = 0
+def on_loop():
+    global clock_state, state_loops
+    if clock_state == ClockStates.BRIGHTNESS:
+        check_encoder_for_brightness()
+    if clock_state == ClockStates.DIGIT_COLOR:
+        check_encoder_for_color_changes()
+    if clock_state == ClockStates.COLON_COLOR:
+        check_encoder_for_color_changes()
+    if clock_state == ClockStates.SECONDS_COLOR:
+        check_encoder_for_color_changes()
+    if clock_state == ClockStates.AM_COLOR:
+        check_encoder_for_color_changes()
+    if clock_state == ClockStates.WIFI:
+        show_ip()
+        clock_state = ClockStates.RENDER_STYLE
+    if clock_state == ClockStates.RENDER_STYLE:
+        check_encoder_for_render_style()
+    if clock_state == ClockStates.RAINBOW:
+        play_rainbow()
+        clock_state = ClockStates.BRIGHTNESS
+        state_loops = 0
 
-        if not is_valid_time(years):
-            requested_render = (-1, -1, -1, True, neo.c_red, neo.c_white, 0)
-            time.sleep(1.0)
-            sync.sync_time(tutc, True)
-            continue
+    if encoder.did_button_press():
+        clock_state += 1
+        draw_menu_light()
+        print("State: ", clock_state)
+        state_loops = 300;
 
-        colon_color_override = update_colon_color(tutc, hist.get_last_time_check())
-
-        tlocal = apply_timezone_offset(t, last_dst)
-
-        if not dst_lockout:
-            new_dst = th.daylight_savings_check(tlocal)
-            last_dst, tlocal, dst_lockout = handle_dst_change(new_dst, last_dst, t)
-
-        h, m, s = tlocal[3], tlocal[4], tlocal[5]
-        is_am = h < 12
-        h12 = th.h24_to_h12(h)
-
-        dc1, dc2, blink_period = critical_time_check(tlocal)
-
-        requested_render = (h12, m, s, is_am, dc2, colon_color_override, blink_period)
-        time.sleep(0.01)
-
-        if clock_state == ClockStates.BRIGHTNESS:
-            check_encoder_for_brightness(h12, m, s, is_am, display_timer)
-        if clock_state == ClockStates.DIGIT_COLOR:
-            check_encoder_for_color_changes(h12, m, s, is_am, display_timer)
-        if clock_state == ClockStates.COLON_COLOR:
-            check_encoder_for_color_changes(h12, m, s, is_am, display_timer)
-        if clock_state == ClockStates.SECONDS_COLOR:
-            check_encoder_for_color_changes(h12, m, s, is_am, display_timer)
-        if clock_state == ClockStates.AM_COLOR:
-            check_encoder_for_color_changes(h12, m, s, is_am, display_timer)
-
-        if encoder.did_button_press():
-            clock_state += 1
-            draw_menu_light()
-            if clock_state == ClockStates.RAINBOW:
-                # def rainbow_animation(loops=50, dim_amount=.93, initial_brightness=0.1, speed=56):
-                neo.rainbow_animation(600, 0.93, brightness)
-                clock_state = ClockStates.BRIGHTNESS
+    # This returns you to the first state if you don't press a button after 300 loops
+    if state_loops > 0:
+        state_loops -= 1
+        if state_loops <= 0:
+            clock_state = ClockStates.BRIGHTNESS
             print("State: ", clock_state)
-            state_loops = 300;
-
-        # This returns you to the first state if you don't press a button after 300 loops
-        if state_loops > 0:
-            state_loops -= 1
-            if state_loops <= 0:
-                clock_state = ClockStates.BRIGHTNESS
-                print("State: ", clock_state)
-
-                
+           
 # Helper method for checking encoder and then updating brightness
-def check_encoder_for_brightness(h12, m, s, is_am, timer):
+def check_encoder_for_brightness():
     '''Reads the encoder for brightness changes and updates the brightness.
 
     Continuously monitors the encoder while it is changing, adjusting the brightness
@@ -356,12 +440,12 @@ def check_encoder_for_brightness(h12, m, s, is_am, timer):
 
     if encoderValue != encoder.EncoderResult.NO_CHANGE:
         encoder_loops = 80
-        stop_timer(timer) #stops timer so it won't interrupt
+        stop_timer() #stops timer so it won't interrupt
 
         while True:  # looping to keep focus on encoder and not miss steps
             if encoderValue != encoder.EncoderResult.NO_CHANGE:
                 change_brightness(encoderValue)
-                neo.render_time(h12, m, s, is_am, digit_color, colon_color, seconds_color, am_color, brightness)
+                neo.render_time(h12, m, s, is_am, digit_color, colon_color, seconds_color, am_color, brightness, render_style)
                 neo.show()
                 encoder_loops = 80  # loops 80 times at .01 sleep. So stays in this loop about .8s after the last encoder change
 
@@ -371,11 +455,11 @@ def check_encoder_for_brightness(h12, m, s, is_am, timer):
 
             if encoder_loops < 0:
                 print("encoder loop break")
-                hist.write_brightness(brightness)
-                start_timer(timer) #re-starts timer
+                save_brightness()
+                start_timer() #re-starts timer
                 break
 
-def check_encoder_for_color_changes(h12, m, s, is_am, timer):
+def check_encoder_for_color_changes():
     '''Reads the encoder for color changes and updates the color based on the clock state.
 
     Continuously monitors the encoder while it is changing, adjusting the color
@@ -388,13 +472,14 @@ def check_encoder_for_color_changes(h12, m, s, is_am, timer):
 
     if encoderValue != encoder.EncoderResult.NO_CHANGE:
         encoder_loops = 1
-        stop_timer(timer) #stops timer so it won't interrupt
+        stop_timer() #stops timer so it won't interrupt
 
         while True:  # looping to keep focus on encoder and not miss steps
             if encoderValue != encoder.EncoderResult.NO_CHANGE:
                 color, color_state = change_color(color, color_state, encoderValue, encoder_loops)
-                set_current_color(color, color_state)
-                draw_color_box(h12, m, s, is_am)
+                set_current_color(color, color_state)                                
+                neo.render_time(h12, m, s, is_am, digit_color, colon_color, seconds_color, am_color, brightness, render_style)
+                neo.show()
                 encoder_loops = 80  # loops 80 times at .01 sleep. So stays in this loop about .8s after the last encoder change
 
             time.sleep(0.01)
@@ -403,45 +488,53 @@ def check_encoder_for_color_changes(h12, m, s, is_am, timer):
 
             if encoder_loops < 0:
                 print("encoder color loop break")
-                start_timer(timer) #re-starts timer
+                start_timer() #re-starts timer
                 save_colors()
                 break
             
-def draw_color_box(h12, m, s, is_am):
-    '''draws a box around the thing you are changing the color of'''
-    if clock_state == ClockStates.DIGIT_COLOR: 
-        neo.draw_vert_line(0, 0, 7, neo.dim_color(digit_color, brightness))
-        neo.draw_vert_line(24, 0, 7, neo.dim_color(digit_color, brightness))
-        neo.draw_horz_line(7, 0, 24, neo.dim_color(digit_color, brightness))
-        neo.draw_horz_line(0, 0, 24, neo.dim_color(digit_color, brightness))
-    elif clock_state == ClockStates.COLON_COLOR:
-        neo.draw_vert_line(10, 1, 5, neo.dim_color(colon_color, brightness))
-        neo.draw_vert_line(12, 1, 5, neo.dim_color(colon_color, brightness))
-        neo.draw_horz_line(1, 10, 12, neo.dim_color(colon_color, brightness))
-        neo.draw_horz_line(5, 10, 12, neo.dim_color(colon_color, brightness))
-    elif clock_state == ClockStates.SECONDS_COLOR:
-        neo.draw_vert_line(24, 7, 5, neo.dim_color(seconds_color, brightness))
-        neo.draw_horz_line(5, 24, 31, neo.dim_color(seconds_color, brightness))
-    elif clock_state == ClockStates.AM_COLOR:
-        neo.draw_vert_line(24, 0, 3, neo.dim_color(am_color, brightness))
-        neo.draw_vert_line(31, 0, 3, neo.dim_color(am_color, brightness))
-        neo.draw_horz_line(3, 24, 31, neo.dim_color(am_color, brightness))
-        neo.draw_horz_line(0, 24, 31, neo.dim_color(am_color, brightness))
-    
-    neo.render_time(h12, m, s, is_am, digit_color, colon_color, seconds_color, am_color, brightness)
-    neo.show()
+def check_encoder_for_render_style():
+    '''Reads the encoder for render style changes.
+
+    Continuously monitors the encoder while it is changing, adjusting the brightness
+    according to the encoder direction.
+    '''
+    global brightness, digit_color, colon_color
+    encoderValue = encoder.read_encoder()
+
+    if encoderValue != encoder.EncoderResult.NO_CHANGE:
+        encoder_loops = 80
+        stop_timer() #stops timer so it won't interrupt
+
+        while True:  # looping to keep focus on encoder and not miss steps
+            if encoderValue != encoder.EncoderResult.NO_CHANGE:
+                toggle_render_style(encoderValue)
+                neo.clear()
+                neo.render_time(h12, m, s, is_am, digit_color, colon_color, seconds_color, am_color, brightness, render_style)
+                neo.show()
+                encoder_loops = 80  # loops 80 times at .01 sleep. So stays in this loop about .8s after the last encoder change
+
+            time.sleep(0.01)
+            encoderValue = encoder.read_encoder()
+            encoder_loops -= 1
+
+            if encoder_loops < 0:
+                print("encoder loop break")
+                save_render_style()
+                start_timer() #re-starts timer
+                break
 
 def draw_menu_light():
     '''draws a singe light showing what menu spot you're on so you know what the dial will do'''
     if clock_state == ClockStates.DIGIT_COLOR:
         neo.set_color(0, 7, neo.dim_color(digit_color, brightness))
     elif clock_state == ClockStates.COLON_COLOR:
-        neo.set_color(1, 7, neo.dim_color(colon_color, brightness))
+        neo.set_color(0, 6, neo.dim_color(colon_color, brightness))
     elif clock_state == ClockStates.SECONDS_COLOR:
-        neo.set_color(2, 7, neo.dim_color(seconds_color, brightness))
+        neo.set_color(0, 5, neo.dim_color(seconds_color, brightness))
     elif clock_state == ClockStates.AM_COLOR:
-        neo.set_color(3, 7, neo.dim_color(am_color, brightness))
-    
+        neo.set_color(0, 4, neo.dim_color(am_color, brightness))
+    elif clock_state == ClockStates.RENDER_STYLE:
+        neo.set_color(0, 3, neo.dim_color(neo.c_blue, brightness))    
 def get_current_color():
     '''returns the color we are modifying based on what state we are in'''
     if clock_state == ClockStates.DIGIT_COLOR:
@@ -471,7 +564,8 @@ def set_current_color(color, color_state):
         
 def save_colors():
     hist.write_colors(digit_color, digit_color_state, colon_color, colon_color_state, seconds_color, seconds_color_state, am_color, am_color_state)
-
+def save_brightness():
+    hist.write_brightness(brightness)
 def change_color(color, color_state, direction, encoder_loops):
     r, g, b = color
     last_state = color_state
@@ -486,11 +580,11 @@ def change_color(color, color_state, direction, encoder_loops):
     color = (r, g, b)
 
     # Uncomment the lines below if you want to print the color, speed, and state information... caution noisy 
-    # print(f"color = {color} -- speed: {speed}")
+    print(f"color = {color} -- speed: {speed} -- state: {color_state}")
     
     # Uncomment these lines if you only want the color state changes... less noisy
-    # if color_state != last_state:
-    # 		print(f"color state change {last_state} -> {color_state}")
+    if color_state != last_state:
+        print(f"color state change {last_state} -> {color_state}")
 
     return (color, color_state)
 
@@ -541,12 +635,12 @@ def set_rtc_with_test(test_name):
 def set_and_go():
     ''' Use NTP to set the rtc.  Assumes no connection.'''
     ntp.init()
-    ap = ntp.scan()
+    ap = ntp.find_ap(ssid)
     if ap is None:
         print("No access point found. Abort.")
         return
-    ssid, bssid, chan, signal, _, _, pw = ap
-    print("Found AP.  Name=%s, Chan=%d, Signal=%d, PW=%s" % (ssid, chan, signal, pw))
+    ap_ssid, bssid, chan, signal, _, _ = ap
+    print("Found AP.  Name=%s, Chan=%d, Signal=%d, PW=%s" % (ap_ssid, chan, signal, pw))
     ntp.connect(ssid, pw)
     t_utc = ntp.ntp()
     if t_utc is None:
@@ -557,3 +651,59 @@ def set_and_go():
     rtc.set_time(t_tuple)
     hist.time_check(t_utc)
     run()
+
+
+def update_colors_from_server(values):
+    global digit_color, colon_color, seconds_color, am_color, brightness
+
+    digit_color = tuple(map(int, values["digit_color"]))
+    colon_color = tuple(map(int, values["colon_color"]))
+    seconds_color = tuple(map(int, values["seconds_color"]))
+    am_color = tuple(map(int, values["ampm_color"]))
+    b =float(values["brightness"])
+    brightness = b
+    print(f"digit color = {digit_color}, brightness (local) = {b} brightness (global) {brightness}!!!!!!!!")
+    
+    print("Got a color update from the server: ", values)
+    
+    save_colors()
+    save_brightness()
+    
+def get_colors_for_server():
+    if is_am: am_or_pm = "am"
+    else: am_or_pm = "pm"
+    time_object = (f"{h12}",f"{m:02d}",f"{s:02d}",am_or_pm)
+    return (digit_color, colon_color, seconds_color, am_color, brightness, get_time_string(), time_object)
+    
+def play_rainbow():
+    stop_timer()
+    neo.rainbow_animation(600, 0.93, brightness)
+    start_timer()
+    
+def show_ip():
+    stop_timer()
+    if is_connected: neo.show_wifi_ok(ip)
+    else: neo.scroll_text("  " + access_point.scroll_text, neo.dim_color(digit_color, brightness), .005)
+    start_timer()
+    
+def get_time_string():
+    if is_am: am_or_pm = "am"
+    else: am_or_pm = "pm"
+    return f"{h12}:{m:02d}:{s:02d} {am_or_pm}"
+
+def draw_message_from_server(message, color, isLarge):
+    stop_timer()
+    neo.scroll_text(message,neo.dim_color(color, brightness), .05, isLarge)
+    start_timer()
+def save_render_style():
+    hist.write_render_style(render_style)
+    
+def toggle_render_style(is_up = encoder.EncoderResult.UP):
+    global render_style
+    if is_up == encoder.EncoderResult.UP: render_style += 1;
+    else: render_style -=1;
+    if render_style >= len(RenderStyles.NAMES): render_style = 0
+    if render_style < 0: render_style = len(RenderStyles.NAMES) - 1
+    save_render_style()
+    
+    
