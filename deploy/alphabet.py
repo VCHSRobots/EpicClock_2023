@@ -22,6 +22,20 @@ font_5x7 = (
      0x1f14141408, 0x0814140c1f, 0x1f08101008, 0x0915151502, 0x107e110102, 0x1e0101021f, 0x1c0201021c, 0x1e0106011e,        
      0x110a040a11, 0x180505051e, 0x1113151911, 0x0008364100, 0x00007f0000, 0x0041360800, 0x0408080408, 0x003c3c3c00)
 
+font_3x5 = (
+        0x000000, 0x001700, 0x030003, 0x1F0A1F, 0x121F09, 0x090412, 0x0A151D, 0x000300,
+        0x0e1100, 0x110e00, 0x150e15, 0x040e04, 0x100800, 0x040404, 0x001000, 0x180403,
+        0x1F111F, 0x021F00, 0x191512, 0x11150A, 0x07041F, 0x171509, 0x0E1509, 0x011D03,
+        0x0A150A, 0x12150E, 0x000A00, 0x100A00, 0x040A11, 0x0A0A0A, 0x110A04, 0x011502,
+        0x0E1516, 0x1E051E, 0x1F150A, 0x0E110A, 0x1f110E, 0x1f1515, 0x1f0505, 0x0E1119,
+        0x1F041F, 0x001F00, 0x08100F, 0x1F041B, 0x1F1010, 0x1F021F, 0x1F011E, 0x0E110E,
+        0x1F0502, 0x0E111E, 0x1F051A, 0x121509, 0x011F01, 0x1F101F, 0x0F180F, 0x1F081F,
+        0x1B041B, 0x071C07, 0x191513, 0x1f1100, 0x030418, 0x111f00, 0x020102, 0x101010,
+        0x010200, 0x1E051E, 0x1F150A, 0x0E110A, 0x1f110E, 0x1f1515, 0x1f0505, 0x0E1119,
+        0x1F041F, 0x001F00, 0x08100F, 0x1F041B, 0x1F1010, 0x1F021F, 0x1F011E, 0x0E110E,
+        0x1F0502, 0x0E111E, 0x1F051A, 0x121509, 0x011F01, 0x1F101F, 0x0F180F, 0x1F081F,
+        0x1B041B, 0x071C07, 0x191513, 0x041F11, 0x001B00, 0x111f04, 0x010201 )
+
 # Following is a 7x5 font rendered in an 8x5 format
 x_0 = (0,0,1,1,1,1,1,0, 0,1,0,0,0,0,0,1, 0,1,0,0,0,0,0,1, 0,1,0,0,0,0,0,1, 0,0,1,1,1,1,1,0 )
 x_1 = (0,0,0,0,0,0,0,0, 0,1,0,0,0,0,0,1, 0,1,1,1,1,1,1,1, 0,0,0,0,0,0,0,1, 0,0,0,0,0,0,0,0 )
@@ -86,21 +100,69 @@ def new_render(c, column, color):
             if (b & 0x01) != 0: neo.set_color(icol + column, irow, color)
             b = (b >> 1) & 0x07F
 
-def show_char(c, column, color):
+def render_char(c, column, color, size='5x7', r=0):
+    if size == '5x7':
+        font = font_5x7
+        font_width = 5
+        font_height = 7
+    elif size == '3x5':
+        font = font_3x5
+        font_width = 3
+        font_height = 5
+    else:
+        raise ValueError("Unsupported font size")
+    
+    io = ord(c) - 32
+    if io < 0 or io >= len(font):
+        return
+    
+    glyph = font[io]
+    for icol in range(font_width):
+        b = (glyph >> (font_width - 1 - icol) * 8) & 0x00FF  
+        for irow in range(font_height):
+            if (b & 0x01) != 0:
+                display_row = irow+r
+                if size =='3x5': display_row = font_height-1 - irow +r
+                neo.set_color(icol + column, display_row, color)
+            if size == '5x7':
+                b = (b >> 1) & 0x07F
+            elif size == '3x5':
+                b = (b >> 1) & 0x05F
+
+def show_char(c, column, color, size ='5x7'):
     neo.solid(neo.c_black)
-    new_render(c, column, color)
+    render_char(c, column, color, size)
     neo.show()
 
 def show_test():
     line = ''' ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,"'?!@_*#$%&()+-/:;<=>[\]^`{|}~'''
     for c in line:
-        show_char(c)
+        show_char(c,0,(15,0,55))
         time.sleep(0.65)
-
+        
+def short_test(font = '5x7'):
+    line = ''' ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,"'?!@_*#$%&()+-/:;<=>[\]^`{|}~'''
+    for c in line:
+        neo.solid(neo.c_black)
+        render_char(c,0, (22,22,0), font)
+        neo.show()
+        time.sleep(.35)
 
     
 
-
+def hello_world(font = '3x5'):
+    if font == '5x7':
+        font_width = 5
+    elif font == '3x5':
+        font_width = 3
+        
+    neo.solid(neo.c_black)
+    render_char('H',0, (22,22,0), font)
+    render_char('e',font_width, (22,0,22), font)
+    render_char('l',font_width*2, (0,22,22), font)
+    render_char('l',font_width*3, (0,0,22), font)
+    render_char('o',font_width*4, (22,0,0), font)
+    neo.show()
 
 
 
