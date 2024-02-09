@@ -28,9 +28,13 @@ RGB_MAX = 255
 
 def next_color(r, g, b, state, speed, color_direction=ColorDirection.UP):
     """given an r, g, b, color, the state and speed it returns the next color and state"""
+    if state > 6 :
+        print(f"state is {state}. Too high! Setting to 6")
+        state = 6
+    elif state < 0 : state = 0
     speed *= color_direction
     if state == ColorStates.TO_RED:
-        g = 0
+        g = RGB_MIN
         if r >= RGB_MAX:
             state = ColorStates.TO_YELLOW
         else:
@@ -116,3 +120,8 @@ def ensure_rgb_range(r, g, b):
     g = max(RGB_MIN, min(g, RGB_MAX))
     b = max(RGB_MIN, min(b, RGB_MAX))
     return r, g, b
+
+def guess_nearest_state(r, g, b):
+    if( r <= b and r<= g): return ColorStates.TO_BLUE
+    if( b <= r and b<= g): return ColorStates.TO_GREEN
+    if( g <= b and g<= r): return ColorStates.BACK_TO_RED
