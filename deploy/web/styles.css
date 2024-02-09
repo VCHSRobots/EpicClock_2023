@@ -1,0 +1,175 @@
+/* General styles */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #DDD;
+    margin: 20px;
+    text-align: center;
+}
+
+h1 {
+    color: #333;
+}
+
+form {
+    max-width: 300px;
+    margin: 0 auto;
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+label {
+    display: block;
+    margin-bottom: 10px;
+    color: #333;
+}
+
+input[type="color"],
+input[type="number"] {
+    width: 100%;
+    height: 75px;
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    box-sizing: border-box;
+}
+
+input[type="submit"],
+button {
+    background-color: #4caf50;
+    color: #fff;
+    padding: 10px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+input[type="submit"]:hover,
+button:hover {
+    background-color: #45a049;
+}
+
+button {
+    margin-top: 10px;
+}
+
+textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    box-sizing: border-box;
+    margin-top: 10px;
+}
+
+/* Specific styles */
+.clock-box {
+    max-width: 600px;
+    margin: 20px auto;
+    background-color: #333;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    overflow: hidden;
+    position: relative; /* Add this for positioning refresh button */
+}
+
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(25, 25, 25, 0.3);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.overlay::before {
+    content: "";
+    border: 4px solid rgba(0, 0, 0, 0.1);
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.clock-box .refresh-button {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    background-color: black;
+    color: white;
+    padding: 5px;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    margin: 10px;
+}
+
+.clock-box .refresh-button:hover {
+    background-color: #333; /* Adjust the hover background color as needed */
+}
+
+#secondsIndicatorLine {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 15px;
+    transition: width 1s linear;
+}
+
+.clock-box button:hover {
+    background-color: #45a049;
+}
+.settings-box {
+    max-width: 600px;
+    margin: 20px auto;
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.settings-box button {
+    background-color: #008CBA;
+    color: #fff;
+    padding: 10px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.settings-box button:hover {
+    background-color: #00608E;
+}
+
+.settings-box input[type="radio"] {
+    display: inline-block; /* Display radio buttons inline */
+    vertical-align: middle; /* Align radio buttons vertically */
+    margin-right: 10px; /* Add some space between radio buttons */
+}
+
+.settings-box label {
+    color: #333;
+    display: inline-block; /* Display labels inline */
+    vertical-align: middle; /* Align labels vertically */
+    margin: 0; /* Reset margin */
+    margin-right: 40px;
+}
+
