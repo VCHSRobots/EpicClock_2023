@@ -32,12 +32,13 @@ def daylight_savings_check(t):
     as an 8-tuple.'''
     years, month, date, hour, mins, secs, _, _ = t
     dow = day_of_week(t)
-    if month < 3 and month > 11: return False    # Dec, Jan, Feb are Standard Time
+    if month < 3 or month > 11: return False    # Dec, Jan, Feb are Standard Time
     if month > 3 and month < 11: return True     # Apr, May, Jun, July, Aug, Sept, Oct are Daylight Savgins
     # Its only March and November that are special cases
     dx = dow + 1       # Renumber weekdays so that Sunday is zero
     if dx > 6: dx = 0
     date_of_previous_sunday = date - dx
+    #print(f"date of previous sunday: {date_of_previous_sunday}")
     if month == 3:
         # In March, we are DST if the previous sunday was on or after the 8th.
         if date_of_previous_sunday >= 8:
