@@ -27,16 +27,6 @@ def read_encoder():
     global clk_state_prev, dt_state_prev, encoder_value
     clk_state = clk.value()
     dt_state = dt.value()
-    changed = False
-
-    clk_state_prev = clk.value()
-    dt_state_prev = dt.value()
-    encoder_value = 0
-
-def read_encoder():
-    global clk_state_prev, dt_state_prev, encoder_value
-    clk_state = clk.value()
-    dt_state = dt.value()
     value = EncoderResult.NO_CHANGE
     if clk_state != clk_state_prev:
         # Encoder state changed
@@ -62,7 +52,7 @@ def did_button_press():
     if sw.value() == 0:
         encoder_value = 0
         print("Button Pressed")
-        utime.sleep(.5) #sleep to debounce
+        utime.sleep(.3) #sleep to debounce
         return True
     else: return False
         
