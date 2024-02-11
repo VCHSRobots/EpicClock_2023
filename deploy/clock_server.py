@@ -87,8 +87,8 @@ html_page_body = """
         <textarea id="powerRecordsResult" rows="8" cols="50" readonly></textarea>
     </div>
     <div id="errorRecords" class="settings-box">
-        <h2>Error Log</h2>
-        <button onclick="getErrorRecords()">Get Error Log</button><br><br>
+        <h2>Log</h2>
+        <button onclick="getErrorRecords()">Get Log</button><br><br>
         <textarea id="errorRecordsResult" rows="8" cols="50" readonly></textarea>
     </div>
 """
