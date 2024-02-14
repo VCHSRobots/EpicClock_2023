@@ -10,95 +10,6 @@ import ure
 import gc
 import log
 import rtcmod as rtc
-    
-html_page_head = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clock Settings</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <link rel="stylesheet" href="styles.css"> 
-</head>
-"""
-
-html_page_body = """
-                 
-<body>
-    <h1>Pi Pico Clock</h1>
-    <div class="clock-box" id="clockBox">
-        <div id="secondsIndicatorLine" style="background-color:{{seconds_color}};"></div>
-        <h1>
-            <span id="h" style="color:{{digit_color}};font-size:4em;">{{h}}</span>
-            <span id="colon" style="color:{{colon_color}};font-size:4em;">:</span>
-            <span id="m" style="color:{{digit_color}};font-size:4em;">{{m}}</span>&nbsp; &nbsp;  
-            <span id="s" style="color:{{seconds_color}};font-size:2em;">{{s}}</span>
-            <span id="am" style="color:{{ampm_color}};font-size:2em;">{{am}}</span>
-        </h1>
-        <button onclick="refreshTime()" class="refresh-button">
-            <i class="fas fa-sync-alt fa-fw" style="color: white;"></i>
-        </button>
-    </div>
-    <div>
-        <h2>Color Settings</h2>
-        <form onsubmit="return submitForm()">
-            <label for="digitColorPicker">Digit Color:</label>
-            <input type="color" id="digitColorPicker" name="digit_color" value="{{digit_color}}" required><br><br>
-            <label for="colonColorPicker">Colon Color:</label>
-            <input type="color" id="colonColorPicker" name="colon_color" value="{{colon_color}}" required><br><br>
-            <label for="ampmColorPicker">AM/PM Color:</label>
-            <input type="color" id="ampmColorPicker" name="ampm_color" value="{{ampm_color}}" required><br><br>
-            <label for="secondsColorPicker">Seconds Color:</label>
-            <input type="color" id="secondsColorPicker" name="seconds_color" value="{{seconds_color}}" required><br><br>
-            <button type="button" onclick="toggleSecondsStyle()">Toggle Render Style</button><br><br>
-            <label for="brightnessPicker">Brightness:</label>
-            <input type="range" id="brightnessPicker" name="brightness" step="0.001" min="0" max="1" value="{{brightness}}" required><br><br>
-            <button type="button" onclick="playRainbow()">Play Rainbow Animation</button>
-        </form>
-    </div>
-    <br><br><br><br><br>
-    <div id="sendMessage" class="settings-box">
-        <h2>Send Text</h2>
-        <textarea id="sendMessageText" rows="8" cols="50"></textarea><br><br>
-        <input type="color" id="messageColor" name="message_color" value="{{digit_color}}" required><br><br>
-        <div>
-            <input type="radio" id="smallText" name="textSize" value="small">
-            <label for="smallText">Small Text</label>
-            
-            <input type="radio" id="largeText" name="textSize" value="large" checked>
-            <label for="largeText">Large Text</label>
-        </div>
-        <button id="sendMessageButton" onclick="sendMessage()">Send</button>
-    </div>
-    <div id="deviceInfo" class="settings-box">
-        <h2>Device Info</h2>
-        <button onclick="getDeviceInfo()">Get Device Info</button><br><br>
-        <textarea id="deviceInfoResult" rows="8" cols="50" readonly></textarea>
-    </div>
-    <div id="timeCheckRecords" class="settings-box">
-        <h2>Time Check Records</h2>
-        <button onclick="getTimeCheckRecords()">Get Time Check Records</button><br><br>
-        <textarea id="timeCheckRecordsResult" rows="8" cols="50" readonly></textarea>
-    </div>
-    <div id="powerRecords" class="settings-box">
-        <h2>Power Records</h2>
-        <button onclick="getPowerRecords()">Get Power Records</button><br><br>
-        <textarea id="powerRecordsResult" rows="8" cols="50" readonly></textarea>
-    </div>
-    <div id="errorRecords" class="settings-box">
-        <h2>Log</h2>
-        <button onclick="getErrorRecords()">Get Log</button><br><br>
-        <textarea id="errorRecordsResult" rows="8" cols="50" readonly></textarea>
-    </div>
-"""
-
-html_page_script = """
-    <script src="scripts.js"></script> 
-</body>
-</html>
-
-"""
 
 def rgb_to_hex(rgb):
     return "#{:02x}{:02x}{:02x}".format(rgb[0], rgb[1], rgb[2])
@@ -128,10 +39,6 @@ def connect_wifi(ssid, password, max_attempts=10, retry_interval=.1):
     print(f"Failed to connect to WiFi after {max_attempts} attempts")
     return False
 
-cors_headers = b'Access-Control-Allow-Origin: *\n'
-cors_headers += b'Access-Control-Allow-Methods: POST\n'
-cors_headers += b'Access-Control-Allow-Headers: Content-Type\n'
-
 
 def start_server_loop(get_clock_values, update_colors, play_rainbow, send_message, on_loop, seconds_style):
     addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
@@ -145,107 +52,65 @@ def start_server_loop(get_clock_values, update_colors, play_rainbow, send_messag
     s.setblocking(False)
     
     while True:
+        time.sleep(0.01)
+        
+        on_loop() #calls main's on_loop each time we loop to check for things like the rotary encoder
+        
         readable, _, _ = select.select([s], [], [], .01)
 
-        if readable:
-            conn, addr = s.accept()
-            print('Got a connection from', addr)
+        if not readable: continue ## no connection so loop again otherwise we deal with the connection
+        
+        conn, addr = s.accept()
+        print('Got a connection from', addr)
 
-            conn.setblocking(True)
+        conn.setblocking(True)
 
-            try:
-                request = conn.recv(1024)
-            except OSError as e:
-                if e.args[0] == errno.EAGAIN or e.args[0] == errno.EWOULDBLOCK:
-                    print("No data to read.")
-                else:
-                    print(f"Error: {e}")
-            finally:
-                conn.setblocking(False)
-                
-            digit_color, colon_color, seconds_color, ampm_color, brightness, time_string, time_object = get_clock_values()
-#             h12, m, s, am_or_pm = time_object
-            current_values = {
-                "digit_color": digit_color,
-                "colon_color": colon_color,
-                "seconds_color": seconds_color,
-                "ampm_color": ampm_color,
-                "brightness": str(brightness),
-            }
-#             print("raw request: ", request)
-            if b"GET /favicon.ico" in request:
-                handle_favicon(conn)
-                continue
-            elif b"GET /styles.css" in request:
-                handle_css(conn)
-                continue
+        try:
+            request = conn.recv(1024)
+        except OSError as e:
+            if e.args[0] == errno.EAGAIN or e.args[0] == errno.EWOULDBLOCK:
+                print("No data to read.")
+            else:
+                print(f"Error: {e}")
+        finally:
+            conn.setblocking(False)
             
-            elif b"GET /scripts.js" in request:
-                handle_script(conn)
-                continue
-            elif b"POST /submit" in request:
-                handle_submit(request, current_values, update_colors, time_object, conn)
-                continue
-            elif b"POST /refresh_time" in request:
-                handle_refresh_time(request, current_values, time_object, conn)
-                continue
-            elif b"POST /play_rainbow" in request:
-                handle_play_rainbow(conn, play_rainbow)
-                continue
-            elif b"POST /seconds_style" in request:
-                handle_seconds_style(conn, seconds_style)
-                continue
-            elif b"POST /get_time_check_records" in request:
-                handle_get_time_check_records(conn)
-                continue
-            elif b"POST /get_power_records" in request:
-                handle_get_power_records(conn)
-                continue
-            elif b"POST /get_error_log" in request:
-                handle_get_error_log(conn)
-                continue
-            elif b"POST /send_message" in request:
-                handle_send_message(request, send_message, conn)
-                continue
-            elif b"POST /get_device_info" in request:
-                handle_get_device_info(conn, wlan)
-                continue
-   
-                
-            # List of replacements
-            replacements = [
-                ("{{digit_color}}", rgb_to_hex(current_values["digit_color"])),
-                ("{{colon_color}}", rgb_to_hex(current_values["colon_color"])),
-                ("{{seconds_color}}", rgb_to_hex(current_values["seconds_color"])),
-                ("{{ampm_color}}", rgb_to_hex(current_values["ampm_color"])),
-                ("{{brightness}}", current_values["brightness"]),
-                ("{{h}}", time_object[0]),
-                ("{{m}}", time_object[1]),
-                ("{{s}}", time_object[2]),
-                ("{{am}}", time_object[3]),
-            ]
-
-            # Perform the replacements
-            rendered_html = html_page_body
-            for target, replacement in replacements:
-                rendered_html = rendered_html.replace(target, replacement)
-
-
-            response = b'HTTP/1.1 200 OK\n\n'
-            
-            gc.collect()
-            send_data(conn, response)
-            gc.collect()
-            send_data(conn, html_page_head)
-            gc.collect()
-            send_data(conn, rendered_html)
-            gc.collect()
-            send_data(conn, html_page_script)
-            gc.collect()
-            conn.close()
-
-        on_loop()
-        time.sleep(0.01)
+        digit_color, colon_color, seconds_color, ampm_color, brightness, time_string, time_object = get_clock_values()
+        
+        current_values = {
+            "digit_color": digit_color,
+            "colon_color": colon_color,
+            "seconds_color": seconds_color,
+            "ampm_color": ampm_color,
+            "brightness": str(brightness),
+        }
+#         print("raw request: ", request)
+        if b"GET / " in request:
+            handle_index(conn)
+        elif b"GET /favicon.ico" in request:
+            handle_favicon(conn)
+        elif b"GET /styles.css" in request:
+            handle_css(conn)
+        elif b"GET /scripts.js" in request:
+            handle_script(conn)
+        elif b"POST /submit" in request:
+            handle_submit(request, current_values, update_colors, time_object, conn)
+        elif b"POST /refresh_time" in request:
+            handle_refresh_time(request, current_values, time_object, conn)
+        elif b"POST /play_rainbow" in request:
+            handle_play_rainbow(conn, play_rainbow)
+        elif b"POST /seconds_style" in request:
+            handle_seconds_style(conn, seconds_style)
+        elif b"POST /get_time_check_records" in request:
+            handle_get_time_check_records(conn)
+        elif b"POST /get_power_records" in request:
+            handle_get_power_records(conn)
+        elif b"POST /get_error_log" in request:
+            handle_get_error_log(conn)
+        elif b"POST /send_message" in request:
+            handle_send_message(request, send_message, conn)
+        elif b"POST /get_device_info" in request:
+            handle_get_device_info(conn, wlan)
         
 def send_data(conn, data):
     while data:
@@ -262,6 +127,21 @@ def send_data(conn, data):
         except OSError as e:
             print(f"Error: {e}")
             break
+        
+def handle_index(conn):
+    try:
+        print("send html")
+        with open("web/index.html", "rb") as f:  # Adjust the path to your CSS file
+            html_data = f.read()
+            
+        send_data(conn, b'HTTP/1.1 200 OK\nContent-Type: Content-Type: text/html; charset=utf-8\n\n')
+        send_data(conn, html_data)
+        conn.close()
+    except OSError as e:
+        print(f"Error while serving CSS file: {e}")
+        send_data(conn, b'HTTP/1.1 404 Not Found\n\n')  
+    finally:
+        conn.close()
         
 def handle_favicon(conn):
     try:
