@@ -11,11 +11,12 @@ def log_exception(exception, fatal=True):
         log_string += "Fatal Crash at: " + timestamp_str + "\n"
     else:
         log_string += "Non-Fatal Exception at: " + timestamp_str + "\n"
-    log_string += "Sys print:\n"
-    log_string += sys.print_exception(exception)
-    log(log_string)
+    log_string += "Sys print:"
+    
+    log(log_string, exception)  
 
-def log(log_string):
+
+def log(log_string, exception = None):
     log_folder = "/logs"
     log_file = "/logs/log.txt"
     archive_file = "/logs/log_old.txt"
@@ -39,7 +40,12 @@ def log(log_string):
     timestamp_str = "{:04d}-{:02d}-{:02d}_{:02d}-{:02d}-{:02d}".format(*timestamp[:6])
     
     with open(log_file, "a") as log_file:
-        log_file.write(timestamp_str +":\n" + log_string + "\n\n")
+        log_file.write(timestamp_str + ":\n" + log_string + "\n")
+        
+        if exception is not None:
+            sys.print_exception(exception, log_file)
+            log_file.write("\n\n")
+        else: log_file.write("\n")
 
 def read_log(filename="log.txt"):
     log_file_path = "/logs/" + filename
