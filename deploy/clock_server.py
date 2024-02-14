@@ -335,27 +335,3 @@ def classify_signal_strength(rssi):
         return "Poor (None)"
     else:
         return "Unknown"
-
-def test(ssid, pw):
-    connect_wifi(ssid, pw)
-    start_server_loop(test_get_colors, test_update_colors, test_play_rainbow, test_on_loop)
-
-    while True:
-        time.sleep(1)
-        print("main loop. Time: ", time.ticks_ms())
-
-def test_get_colors():
-    return (255, 255, 0), (255, 0, 255), (0, 255, 255), (0, 15, 255), .07, "2:21 pm"
-
-def test_on_loop():
-    encoder.read_encoder()
-    encoder.did_button_press()
-    if time.ticks_ms() % 10000 == 0:
-        print("looped on. Time: ", time.ticks_ms)
-
-def test_update_colors(colors):
-    print("updated colors: ", colors)
-
-def test_play_rainbow():
-    print("play rainbow! ")
-
