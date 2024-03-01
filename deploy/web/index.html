@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clock Settings</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="styles.css"> 
+</head>
+                 
+<body>
+    <h1>Pi Pico Clock</h1>
+    <div class="clock-box" id="clockBox">
+        <div id="secondsIndicatorLine"></div>
+        <h1>
+            <span id="h" style="font-size:4em;">-</span>
+            <span id="colon" style="font-size:4em;">:</span>
+            <span id="m" style="font-size:4em;">-</span>&nbsp; &nbsp;  
+            <span id="s" style="font-size:2em;">-</span>
+            <span id="am" style=";font-size:2em;">--</span>
+        </h1>
+        <button onclick="refreshTime()" class="refresh-button">
+            <i class="fas fa-sync-alt fa-fw" style="color: white;"></i>
+        </button>
+    </div>
+    <div>
+        <h2>Color Settings</h2>
+        <form onsubmit="return submitForm()">
+            <label for="digitColorPicker">Digit Color:</label>
+            <input type="color" id="digitColorPicker" name="digit_color" required><br><br>
+            <label for="colonColorPicker">Colon Color:</label>
+            <input type="color" id="colonColorPicker" name="colon_color" required><br><br>
+            <label for="ampmColorPicker">AM/PM Color:</label>
+            <input type="color" id="ampmColorPicker" name="ampm_color" required><br><br>
+            <label for="secondsColorPicker">Seconds Color:</label>
+            <input type="color" id="secondsColorPicker" name="seconds_color" required><br><br>
+            <button type="button" onclick="toggleSecondsStyle()">Toggle Render Style</button><br><br>
+            <label for="brightnessPicker">Brightness:</label>
+            <input type="range" id="brightnessPicker" name="brightness" step="0.001" min="0" max="1" required><br><br>
+            <button type="button" onclick="playRainbow()">Play Rainbow Animation</button>
+        </form>
+    </div>
+    <br><br><br><br><br>
+    <div id="sendMessage" class="settings-box">
+        <h2>Send Text</h2>
+        <textarea id="sendMessageText" rows="8" cols="50"></textarea><br><br>
+        <input type="color" id="messageColor" name="message_color"><br><br>
+        <div>
+            <input type="radio" id="smallText" name="textSize" value="small">
+            <label for="smallText">Small Text</label>
+            
+            <input type="radio" id="largeText" name="textSize" value="large" checked>
+            <label for="largeText">Large Text</label>
+        </div>
+        <button id="sendMessageButton" onclick="sendMessage()">Send</button>
+    </div>
+    <div id="deviceInfo" class="settings-box">
+        <h2>Device Info</h2>
+        <button onclick="getDeviceInfo()">Get Device Info</button><br><br>
+        <textarea id="deviceInfoResult" rows="8" cols="50" readonly></textarea>
+    </div>
+    <div id="timeCheckRecords" class="settings-box">
+        <h2>Time Check Records</h2>
+        <button onclick="getTimeCheckRecords()">Get Time Check Records</button><br><br>
+        <textarea id="timeCheckRecordsResult" rows="8" cols="50" readonly></textarea>
+    </div>
+    <div id="powerRecords" class="settings-box">
+        <h2>Power Records</h2>
+        <button onclick="getPowerRecords()">Get Power Records</button><br><br>
+        <textarea id="powerRecordsResult" rows="8" cols="50" readonly></textarea>
+    </div>
+    <div id="errorRecords" class="settings-box">
+        <h2>Log</h2>
+        <button onclick="getErrorRecords()">Get Log</button><br><br>
+        <textarea id="errorRecordsResult" rows="8" cols="50" readonly></textarea>
+    </div>
+    <script src="scripts.js"></script> 
+</body>
+</html>
+

@@ -5,6 +5,7 @@ import time
 import rtcmod as rtc
 import ntptime as ntp
 import history as hist
+import log
 
 SYNC_OFF     = 0
 SYNC_SCAN    = 1
@@ -82,3 +83,35 @@ def test_sync():
         time.sleep(1)
         if sync_mode == SYNC_OFF: break
     return
+
+def sync_new(tnow, override=False):
+    global last_try
+    year, month, day, hour, minute, second, dow, doy = time.localtime(tnow)
+    
+    if hour != 9: return   # Must be 1:00 or 2:00 am (depending on daylight savings)
+    if last_try is None: doit = True	
+    elif tnow - last_try > 16 * 3600: doit = True #if it's in the 9 oclock hour and it's been 16 hours sense trying then 
+    else: doit = False
+    if not doit: return  #returns if it's not time to sync
+    
+    
+    if not ntp.is_connected(): #should still be connected.
+        print("NTP not connected... cannot sync time")
+        log.log("Time could not sync via NTP. NTP is not connected.") 
+        return
+    
+    t = ntp.ntp()
+    if t is None:
+        log.log("Time could not sync via NTP. NTP was connected but time came back as None") 
+        return
+    rtc.set_time(time.localtime(t))
+    hist.time_check(t)
+    str_tme = "Synced Time via NTP. Time set: " + str(time.localtime(t))
+    last_try = t
+    print(str_tme)
+    log.log(str_tme)
+    
+        
+    
+    
+    

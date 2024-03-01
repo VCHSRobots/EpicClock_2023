@@ -33,7 +33,7 @@ def daylight_savings_check(t):
     years, month, date, hour, mins, secs, _, _ = t
     dow = day_of_week(t)
     if month < 3 or month > 11: return False    # Dec, Jan, Feb are Standard Time
-    if month > 3 or month < 11: return True     # Apr, May, Jun, July, Aug, Sept, Oct are Daylight Savgins
+    if month > 3 and month < 11: return True     # Apr, May, Jun, July, Aug, Sept, Oct are Daylight Savgins
     # Its only March and November that are special cases
     dx = dow + 1       # Renumber weekdays so that Sunday is zero
     if dx > 6: dx = 0

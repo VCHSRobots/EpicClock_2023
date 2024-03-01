@@ -78,6 +78,7 @@ import clock_server as server
 import access_point
 import log
 import gc
+import timesync as sync
 import render_styles as RenderStyles
 
 Version = "V0.9, 12/10/23"
@@ -420,14 +421,19 @@ def on_loop():
         draw_menu_light()
         print("State: ", clock_state)
         state_loops = 300;
-
     # This returns you to the first state if you don't press a button after 300 loops
     if state_loops > 0:
         state_loops -= 1
         if state_loops <= 0:
             clock_state = ClockStates.BRIGHTNESS
             print("State: ", clock_state)
+    sync_time()
            
+def sync_time():
+    t = rtc.get_time()
+    current_time = time.mktime(t)
+    sync.sync_new(current_time)
+    
 # Helper method for checking encoder and then updating brightness
 def check_encoder_for_brightness():
     '''Reads the encoder for brightness changes and updates the brightness.
